@@ -1,0 +1,17 @@
+[project]
+name = "agrivision-khaos"
+version = "0.1.0"
+description = "Federated data-centric AI node for agricultural computer vision pipelines"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "dvc>=3.67.1",
+    "fiftyone>=1.19.0",
+    "opencv-python-headless>=4.13.0.92",
+    "pydantic>=2.13.4",
+    "pytesseract>=0.3.13",
+    "torch>=2.13.0",
+    "torchvision>=0.28.0",
+    "tqdm>=4.70.0",
+    "zensical>=0.0.17",
+]

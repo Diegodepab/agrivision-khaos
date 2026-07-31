@@ -1,57 +1,44 @@
-Olive Disease Curation[C
+# AgriVision Khaos
 ==============================
 
-Repositorio unificado y curado de patologías foliares del olivo para Deep Learning y XAI.[C
+**AgriVision Khaos** es un nodo de curación y preprocesamiento de datos orientado al *Data-Centric AI* y al Aprendizaje Federado en el ámbito agrícola.
 
-Project Organization
-------------
+Este repositorio proporciona una infraestructura dockerizada y estandarizada para limpiar, deduplicar y enriquecer datasets masivos de imágenes (como patologías foliares) antes de alimentar cualquier red neuronal.
 
-    ├── LICENSE
-    ├── Makefile           <- Makefile with commands like `make data` or `make train`
-    ├── README.md          <- The top-level README for developers using this project.
-    ├── data
-    │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
-    │
-    ├── docs               <- A default Sphinx project; see sphinx-doc.org for details
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    │
-    ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-    │   └── figures        <- Generated graphics and figures to be used in reporting
-    │
-    ├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-    │                         generated with `pip freeze > requirements.txt`
-    │
-    ├── setup.py           <- makes project pip installable (pip install -e .) so src can be imported
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │   └── make_dataset.py
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
-    │   │
-    │   ├── models         <- Scripts to train models and then use trained models to make
-    │   │   │                 predictions
-    │   │   ├── predict_model.py
-    │   │   └── train_model.py
-    │   │
-    │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
-    │       └── visualize.py
-    │
-    └── tox.ini            <- tox file with settings for running tox; see tox.readthedocs.io
+## 🚀 Inicio Rápido
 
+Todo el ecosistema está encapsulado en Docker y se controla a través de nuestro `Makefile`.
 
---------
+1. Clona el repositorio.
+2. Copia el archivo de entorno: `cp .env.example .env`
+3. Coloca tus datasets en `data/raw/`.
+4. Ejecuta la ingesta automática:
+   ```bash
+   make setup
+   ```
+5. Accede a la interfaz visual en [http://localhost:5151](http://localhost:5151).
 
-<p><small>Project based on the <a target="_blank" href="https://drivendata.github.io/cookiecutter-data-science/">cookiecutter data science project template</a>. #cookiecutterdatascience</small></p>
+## 📚 Documentación
+
+La documentación completa (Arquitectura, Flujo de Trabajo en Fases, y Guías de Calidad) está generada con Zensical.
+
+Para levantar el servidor de documentación localmente:
+```bash
+make docs
+```
+Luego visita [http://localhost:8080](http://localhost:8080) en tu navegador.
+
+## 🏗️ Estructura del Código
+
+El código fuente (`src/`) sigue las fases de madurez de un proyecto de Inteligencia Artificial Centrada en Datos:
+
+- `01_acquisition/`: Extracción e ingesta de datos brutos.
+- `02_curation/`: Auditoría de calidad (Blur, OCR, Smearing) y deduplicación semántica (MobileNetV2).
+- `03_annotation/`: 
+- `04_augmentation/`: 
+- `05_modeling/`: 
+- `06_deployment/`: 
+
+## ⚖️ Licencia
+
+Este proyecto está bajo la licencia [Apache 2.0](LICENSE).

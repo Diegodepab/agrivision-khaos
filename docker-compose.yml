@@ -1,0 +1,40 @@
+services:
+  mongo:
+    image: mongo:6.0
+    restart: always
+    volumes:
+      - fiftyone-db:/data/db
+
+  fiftyone:
+    build: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      - FIFTYONE_DATABASE_URI=mongodb://mongo:27017/
+    depends_on:
+      - mongo
+    ports:
+      - "${FIFTYONE_PORT:-5151}:5151"
+    command:
+      - uv
+      - run
+      - fiftyone
+      - app
+      - launch
+      - "${DATASET_NAME:-agrivision-dataset}"
+      - --address
+      - 0.0.0.0
+      - --port
+      - "5151"
+
+  docs:
+    build:
+      context: .
+      dockerfile: Dockerfile.docs
+    ports:
+      - "8080:80"
+    restart: always
+
+volumes:
+  fiftyone-db:

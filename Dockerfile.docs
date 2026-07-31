@@ -1,0 +1,27 @@
+# --- Stage 1: Build the Site ---
+FROM ghcr.io/astral-sh/uv:alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy your project files into the container
+COPY pyproject.toml uv.lock* ./
+
+# Build the static site (output goes to /app/site by default)
+RUN uv sync --frozen --no-install-project
+
+COPY . .
+
+RUN uv run zensical build
+
+# --- Stage 2: Serve with Nginx ---
+FROM nginx:alpine
+
+# Copy the built static files from the builder stage to Nginx
+COPY --from=builder /app/site /usr/share/nginx/html
+
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]

@@ -7,9 +7,13 @@ import fiftyone as fo
 import fiftyone.types as fot
 from pydantic import BaseModel
 
+from rich.logging import RichHandler
 # Configurar logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True, markup=True)]
 )
 logger = logging.getLogger(__name__)
 

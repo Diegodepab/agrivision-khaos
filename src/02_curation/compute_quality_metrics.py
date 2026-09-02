@@ -23,7 +23,13 @@ except ImportError:  # pragma: no cover - depende del entorno local
     TesseractError = RuntimeError
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+from rich.logging import RichHandler
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(rich_tracebacks=True, markup=True)]
+)
 logger = logging.getLogger(__name__)
 
 # Constantes configurables para experimentación empírica.
@@ -234,11 +240,39 @@ def compute_resolution(image_bgr: np.ndarray) -> dict[str, int | bool]:
 
 def compute_blur(image_bgr: np.ndarray) -> dict[str, float]:
     """
-    Calcula la varianza del Laplaciano sobre la imagen en grises.
-    Mide bordes y texturas de alta frecuencia, útiles en diagnóstico foliar.
+    Calcula la varianza del Laplaciano sobre la imagen o el recorte.
+    Utiliza umbralización de Otsu para aislar la hoja del fondo y no penalizar bordes lisos artificiales.
     """
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    return {"blur_variance": float(cv2.Laplacian(gray, cv2.CV_64F).var())}
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    
+    # Extraer el canal de saturación
+    saturation = hsv[:, :, 1]
+    
+    # Intentar segmentación por Otsu en el canal de saturación (ignora fondos blancos/grises/negros)
+    try:
+        _, mask = cv2.threshold(saturation, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    except Exception:
+        mask = None
+        
+    # Si la máscara es casi toda negra o toda blanca, fallback a Otsu en escala de grises
+    if mask is not None:
+        mask_ratio = np.sum(mask > 0) / mask.size
+        if mask_ratio < 0.05 or mask_ratio > 0.95:
+            try:
+                _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            except Exception:
+                mask = None
+
+    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+    
+    if mask is not None and np.any(mask > 0):
+        mean, stddev = cv2.meanStdDev(laplacian, mask=mask)
+        variance = float(stddev[0][0] ** 2)
+    else:
+        variance = float(laplacian.var())
+        
+    return {"blur_variance": variance}
 
 
 def compute_brightness(image_bgr: np.ndarray) -> dict[str, float]:
@@ -258,6 +292,19 @@ def compute_brightness(image_bgr: np.ndarray) -> dict[str, float]:
         "brightness_p5": float(p5),
         "brightness_p95": float(p95),
     }
+
+
+def should_run_ocr(metrics: QualityMetrics) -> bool:
+    if metrics.is_corrupted or metrics.low_resolution:
+        return False
+
+    if metrics.brightness_p5 is None or metrics.brightness_p95 is None:
+        return True
+
+    return not (
+        metrics.brightness_p95 < 24.0
+        or metrics.brightness_p5 > 231.0
+    )
 
 
 def prepare_image_for_ocr(image_bgr: np.ndarray) -> np.ndarray:
@@ -390,15 +437,15 @@ def compute_smearing(
 
 
 def process_image(
-    sample_data: tuple[str, str],
+    sample_data: tuple[str, str, list[list[float]] | None],
     ocr_engine: OcrEngine,
-) -> tuple[str, QualityMetrics | None]:
+) -> tuple[str, QualityMetrics | None, list[float] | None]:
     """
     Procesa una imagen completa desde una única lectura de disco.
 
     Retorna métricas o None si hubo una excepción fatal imprevista.
     """
-    sample_id, filepath = sample_data
+    sample_id, filepath, bboxes = sample_data
 
     try:
         metrics = QualityMetrics()
@@ -413,13 +460,34 @@ def process_image(
         metrics_dict.update(compute_blur(image.bgr))
         metrics_dict.update(compute_brightness(image.bgr))
         metrics_dict.update(compute_smearing(image.bgr, image.alpha))
-        metrics_dict["has_watermark"] = ocr_engine.has_watermark(image.bgr)
+        metrics = QualityMetrics(**metrics_dict)
+        if should_run_ocr(metrics):
+            metrics.has_watermark = ocr_engine.has_watermark(image.bgr)
 
-        return sample_id, QualityMetrics(**metrics_dict)
+        box_blurs = None
+        if bboxes:
+            box_blurs = []
+            h, w = image.bgr.shape[:2]
+            for box in bboxes:
+                # box: [top-left-x, top-left-y, width, height] (relative)
+                x1 = int(box[0] * w)
+                y1 = int(box[1] * h)
+                bw = int(box[2] * w)
+                bh = int(box[3] * h)
+                x2 = min(x1 + bw, w)
+                y2 = min(y1 + bh, h)
+                x1, y1 = max(0, x1), max(0, y1)
+                if x2 > x1 and y2 > y1:
+                    crop = image.bgr[y1:y2, x1:x2]
+                    box_blurs.append(compute_blur(crop)["blur_variance"])
+                else:
+                    box_blurs.append(0.0)
+                    
+        return sample_id, metrics, box_blurs
 
     except Exception:
         logger.exception("Error fatal procesando %s", filepath)
-        return sample_id, None
+        return sample_id, None, None
 
 
 def flush_quality_batch(
@@ -473,10 +541,10 @@ def ensure_quality_schema(dataset: fo.Dataset) -> None:
 
 def bounded_parallel_map(
     executor: ThreadPoolExecutor,
-    tasks: Iterable[tuple[str, str]],
+    tasks: Iterable[tuple[str, str, list[list[float]] | None]],
     ocr_engine: OcrEngine,
     max_pending: int,
-) -> Iterable[tuple[str, QualityMetrics | None]]:
+) -> Iterable[tuple[str, QualityMetrics | None, list[float] | None]]:
     """
     Productor-consumidor con backpressure.
 
@@ -530,7 +598,13 @@ def compute_dataset_quality(
     logger.info("Precargando IDs y rutas para evitar timeouts de MongoDB...")
     sample_ids = dataset.values("id")
     filepaths = dataset.values("filepath")
-    tasks = zip(sample_ids, filepaths)
+    
+    if dataset.has_sample_field("coco_detections"):
+        bboxes_list = dataset.values("coco_detections.detections.bounding_box")
+    else:
+        bboxes_list = [None] * total_samples
+        
+    tasks = zip(sample_ids, filepaths, bboxes_list)
 
     ocr_engine = OcrEngine(
         enabled=enable_ocr, 
@@ -559,11 +633,12 @@ def compute_dataset_quality(
     largest_image = None
     batch_dict = {}
     flat_batches = {field.name: {} for field in fields(QualityMetrics)}
+    box_blur_batch = {}
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         results = bounded_parallel_map(executor, tasks, ocr_engine, max_pending)
 
-        for sample_id, metrics in tqdm(
+        for sample_id, metrics, box_blurs in tqdm(
             results, total=total_samples, desc="Extrayendo calidad"
         ):
             if metrics is None:
@@ -575,9 +650,15 @@ def compute_dataset_quality(
             for field_name, value in metric_values.items():
                 flat_batches[field_name][sample_id] = value
 
+            if box_blurs is not None:
+                box_blur_batch[sample_id] = box_blurs
+
             if len(batch_dict) >= BATCH_UPDATE_SIZE:
                 flush_quality_batch(dataset, batch_dict)
                 flush_flat_metric_batches(dataset, flat_batches)
+                if box_blur_batch and dataset.has_sample_field("coco_detections"):
+                    dataset.set_values("coco_detections.detections.blur_variance", box_blur_batch, key_field="id")
+                    box_blur_batch.clear()
 
             if metrics.is_corrupted:
                 corrupted_count += 1
@@ -604,6 +685,9 @@ def compute_dataset_quality(
 
     flush_quality_batch(dataset, batch_dict)
     flush_flat_metric_batches(dataset, flat_batches)
+    if box_blur_batch and dataset.has_sample_field("coco_detections"):
+        dataset.set_values("coco_detections.detections.blur_variance", box_blur_batch, key_field="id")
+        box_blur_batch.clear()
 
     logger.info("Análisis finalizado y guardado en FiftyOne.")
     logger.info("Estadísticas globales del dataset:")

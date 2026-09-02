@@ -1,4 +1,4 @@
-.PHONY: help setup quality deduplicate app docs clean
+.PHONY: help setup quality deduplicate pipeline app docs clean
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -6,7 +6,16 @@
 DOCKER_CMD = docker compose run --rm fiftyone uv run python
 WORKERS ?= 4
 DATASET ?= agrivision-dataset
+RAW_DIR ?= data/raw
 METHOD ?= exact
+PROFILE ?= quality-first
+OUTPUT_FORMATS ?= datumaro,coco,yolo,classification
+FASTDUP_MODE ?= auto
+CLEANLAB_MODE ?= auto
+EXPORT_DIR ?= data/processed
+REPORT_DIR ?= reports/pipeline
+MAX_PHASE_DROP ?= 0.40
+MAX_TOTAL_DROP ?= 0.65
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -16,7 +25,7 @@ METHOD ?= exact
 setup:
 	@echo "Levantando base de datos y ejecutando ingesta..."
 	docker compose up -d mongo
-	$(DOCKER_CMD) src/01_acquisition/make_dataset.py --dataset-name $(DATASET)
+	$(DOCKER_CMD) src/01_acquisition/make_dataset.py --dataset-name $(DATASET) --raw-dir $(RAW_DIR)
 
 ## Ejecuta la batería de métricas de calidad (OCR, Blur, Smearing) (Fase 1)
 quality:
@@ -27,6 +36,22 @@ quality:
 deduplicate:
 	@echo "Ejecutando motor de deduplicación..."
 	$(DOCKER_CMD) src/02_curation/deduplicate_dataset.py --dataset $(DATASET) --method $(METHOD) --inspect
+
+## Ejecuta todo el flujo desatendido y genera un reporte HTML
+pipeline:
+	@echo "Lanzando pipeline desatendido quality-first..."
+	$(DOCKER_CMD) src/02_curation/run_pipeline.py \
+		--dataset $(DATASET) \
+		--raw-dir $(RAW_DIR) \
+		--profile $(PROFILE) \
+		--workers $(WORKERS) \
+		--output-formats $(OUTPUT_FORMATS) \
+		--fastdup-mode $(FASTDUP_MODE) \
+		--cleanlab-mode $(CLEANLAB_MODE) \
+		--export-dir $(EXPORT_DIR) \
+		--report-dir $(REPORT_DIR) \
+		--max-phase-drop $(MAX_PHASE_DROP) \
+		--max-total-drop $(MAX_TOTAL_DROP)
 
 ## Levanta la aplicación FiftyOne para explorar los datos
 app:

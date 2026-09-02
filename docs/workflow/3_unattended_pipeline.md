@@ -58,3 +58,9 @@ Al terminar, el dataset limpio se guardará (por defecto, usando un eficiente si
 data/processed/<tu_dataset>/<timestamp>/
 ```
 Dentro verás subcarpetas estructuradas para `classification` (una carpeta por etiqueta), formatos `coco`, `yolo`, etc., listas para ser conectadas a tu código de entrenamiento.
+
+## Siguiente Paso: Revisión Human-in-the-Loop
+
+La magia del pipeline desatendido reside en que toma un 90% de las decisiones automáticamente. Sin embargo, para no perder información crítica, los casos ambiguos se marcan con la etiqueta `review`. 
+
+Para auditar y salvar o rechazar estos casos visualmente antes de enviar el dataset al entrenamiento de IA, dirígete a la [Fase 4: Revisión Manual (HitL)](4_manual_review.md).

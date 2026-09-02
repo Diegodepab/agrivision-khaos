@@ -2,32 +2,48 @@
 
 Bienvenido a la documentación técnica del pipeline de curación de datos federado **AgriVision Khaos**, desarrollado en el marco del proyecto **Andalucía ISI2A2** (Infraestructura y Servicios de Integración e Inteligencia de Datos en el sector de la Agroalimentación en Andalucía).
 
-Este framework de *Data-Centric AI* actúa como el motor fundacional para ingerir, armonizar y curar datos agrícolas heterogéneos (imágenes, sensores, satélites). Su objetivo es garantizar que los modelos de Machine Learning y los ecosistemas de IA se entrenen sobre conjuntos de datos de altísimo valor y Ground Truth impecable.
+Este framework de *Data-Centric AI* actúa como el motor fundacional para ingerir, armonizar y curar datos agrícolas heterogéneos, garantizando que tus modelos de Machine Learning se entrenen sobre conjuntos de datos de altísimo valor y Ground Truth impecable.
 
-## Alineación Arquitectónica (Pilares del Proyecto)
+---
 
-AgriVision Khaos está diseñado siguiendo principios arquitectónicos modernos para integrarse como un *Living-Lab* de datos abiertos:
+## 🚀 Quick Start (Para Managers y Científicos de Datos)
 
-1. **Metadatos Centralizados, Archivos Desacoplados:**
-   Utilizamos un motor de base de datos no relacional (FiftyOne/MongoDB) que actúa como cerebro semántico. Las imágenes crudas y los binarios pesados residen en el sistema de archivos (usando referencias o *hard links*), mientras que la plataforma centraliza las anotaciones, métricas y metadatos de forma ligera y consultable.
+Si necesitas generar un dataset limpio de inmediato sin entrar en detalles técnicos, sigue este flujo de 3 pasos (Clone-and-Run):
 
-2. **Trazabilidad Estricta (Linaje del Dato):**
-   Cada dato que fluye por Khaos mantiene un registro inmutable de su origen. El sistema documenta el linaje completo: desde qué dataset externo provino (`source_dataset`), qué algoritmos evaluaron su calidad, hasta el motivo exacto por el cual fue conservado o descartado (reportes HTML de auditoría).
+### 1. Prepara tus Datos Crudos
+Clona este repositorio y coloca todas las carpetas con tus datasets (en formato COCO, YOLO, o carpetas por clase) dentro de `data/raw/`.
 
-3. **Diseño Modular por Fases (ETL Agrícola):**
-   - **Extract (Ingesta):** Recolección y unificación de múltiples fuentes de datos inconexas (COCO, YOLO, estructuras de carpetas).
-   - **Transform (Curación):** Limpieza automatizada mediante IA (desenfoque, artefactos, marcas de agua) y deduplicación avanzada (exacta, semántica y aumentada).
-   - **Load (Exportación):** Generación de *manifests* unificados y exportación a formatos estándar listos para inyectarse en modelos de optimización o LLMs.
+```bash
+git clone https://github.com/tu-organizacion/agrivision-khaos.git
+cd agrivision-khaos
+# Arrastra tus carpetas a data/raw/
+```
 
-## Filosofía de Limpieza de Datos
+### 2. Ejecuta el Pipeline Automático
+Lanza el siguiente comando mágico, indicando el nombre que le quieres dar a tu dataset de salida. Ve a tomarte un café; el sistema ingiriendo, calculando métricas de calidad (Otsu-Blur), buscando duplicados semánticos y generando reportes.
 
-El framework resuelve de manera automatizada problemas endémicos en los datasets agrícolas públicos:
-- Resolución Insuficiente y Ruido
-- Fuga de Datos (Duplicados semánticos y rotaciones espejo)
-- Marcas de Agua y Artefactos de Estiramiento
+```bash
+make pipeline DATASET="mi_super_dataset" RAW_DIR="data/raw"
+```
+*Al terminar, obtendrás un reporte HTML Premium (estilo SaaS) auditando cada foto eliminada y conservada en `reports/pipeline/`.*
 
-## Navegación
+### 3. Revisión Humana y Exportación Final (Opcional)
+Si quieres auditar visualmente las imágenes que el pipeline marcó como dudosas (las que tienen *padding* artificial o están en el límite de la calidad):
+```bash
+# Abre la interfaz visual
+make app DATASET="mi_super_dataset"
+```
+En tu navegador (`http://localhost:5152`), busca el tag `review`, acepta o rechaza las imágenes haciendo clic, y cuando termines tu curación visual, exporta el resultado final:
+```bash
+# Genera los archivos (COCO, YOLO) finales validados
+make export DATASET="mi_super_dataset"
+```
+¡Y listo! Tus datos curados estarán esperándote en `data/processed/mi_super_dataset_hitl`.
 
-Usa el menú lateral para explorar la documentación:
-- **Architecture**: Descubre cómo se orquesta la infraestructura.
-- **Workflow**: Sigue nuestras guías paso a paso (Fase 0, Fase 1...) para clonar el repositorio y procesar tus primeros datos en minutos.
+---
+
+## Navegación Profunda
+
+Si quieres entender cómo funciona el cerebro de AgriVision Khaos, usa el menú lateral para explorar:
+- **Architecture**: Principios de diseño, base de datos no relacional (FiftyOne) y trazabilidad del linaje del dato.
+- **Workflow**: Documentación técnica detallada de cada fase (Ingesta, Métricas de Calidad, Deduplicación, y Revisión Manual).

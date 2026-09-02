@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "dvc>=3.67.1",
-    "fastdup>=2.53",
     "fiftyone>=1.19.0",
     "opencv-python-headless>=4.13.0.92",
     "pydantic>=2.13.4",

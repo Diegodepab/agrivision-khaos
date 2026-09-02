@@ -86,7 +86,7 @@ def load_symbol(relative_path: str, symbol_name: str) -> Any:
 
 def optional_tool_status() -> dict[str, dict[str, str]]:
     statuses = {}
-    for package in ("datumaro", "fastdup", "cleanlab"):
+    for package in ("datumaro", "cleanlab"):
         statuses[package] = {
             "available": bool(importlib.util.find_spec(package)),
             "status": "available" if importlib.util.find_spec(package) else "not_installed",
@@ -610,24 +610,9 @@ def decision_for_tagged_duplicates(dataset: fo.Dataset, tag: str, phase: str) ->
     return decisions
 
 
-def run_fastdup_adapter(dataset: fo.Dataset, work_dir: Path, threshold: float) -> tuple[bool, str]:
-    if importlib.util.find_spec("fastdup") is None:
-        return False, "fastdup no esta instalado; se usara FiftyOne."
-
-    try:
-        import fastdup  # type: ignore
-
-        filepaths = list(dataset.values("filepath"))
-        fd = fastdup.create(input_dir=filepaths, work_dir=str(work_dir))
-        fd.run(threshold=threshold)
-        return True, f"fastdup completo en {work_dir}"
-    except Exception as exc:
-        return False, f"fastdup fallo ({exc}); se usara FiftyOne."
-
 
 def run_duplicate_phases(
     dataset: fo.Dataset,
-    fastdup_mode: str,
     work_dir: Path,
     max_phase_drop: float,
     max_total_drop: float,
@@ -672,14 +657,6 @@ def run_duplicate_phases(
         results.append(augmented_result)
     except Exception as exc:
         results.append(PhaseResult(name="augmentation_duplicates", notes=[f"Fase omitida por error: {exc}"]))
-
-    if fastdup_mode in {"auto", "on"}:
-        ok, note = run_fastdup_adapter(dataset, work_dir / "fastdup", threshold=0.96)
-        logger.info(note)
-        if ok:
-            results.append(PhaseResult(name="fastdup", notes=[note]))
-        elif fastdup_mode == "on":
-            raise RuntimeError(note)
 
     return results
 
@@ -1172,7 +1149,6 @@ def main() -> None:
     parser.add_argument("--profile", default="quality-first", choices=["quality-first"])
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--output-formats", default="datumaro,coco,yolo,classification")
-    parser.add_argument("--fastdup-mode", default="auto", choices=["auto", "on", "off"])
     parser.add_argument("--cleanlab-mode", default="auto", choices=["auto", "on", "off"])
     parser.add_argument("--export-dir", default="data/processed")
     parser.add_argument("--report-dir", default="reports/pipeline")
@@ -1219,7 +1195,6 @@ def main() -> None:
     phases.append(run_quality_phase(dataset, args.max_phase_drop, args.max_total_drop))
     duplicate_results = run_duplicate_phases(
         dataset,
-        fastdup_mode=args.fastdup_mode,
         work_dir=interim_dir,
         max_phase_drop=args.max_phase_drop,
         max_total_drop=args.max_total_drop,

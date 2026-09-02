@@ -10,7 +10,6 @@ RAW_DIR ?= data/raw
 METHOD ?= exact
 PROFILE ?= quality-first
 OUTPUT_FORMATS ?= datumaro,coco,yolo,classification
-FASTDUP_MODE ?= auto
 CLEANLAB_MODE ?= auto
 EXPORT_DIR ?= data/processed
 REPORT_DIR ?= reports/pipeline
@@ -46,7 +45,6 @@ pipeline:
 		--profile $(PROFILE) \
 		--workers $(WORKERS) \
 		--output-formats $(OUTPUT_FORMATS) \
-		--fastdup-mode $(FASTDUP_MODE) \
 		--cleanlab-mode $(CLEANLAB_MODE) \
 		--export-dir $(EXPORT_DIR) \
 		--report-dir $(REPORT_DIR) \

@@ -453,7 +453,7 @@ def process_image(
         image = read_image(filepath)
         if image is None:
             metrics.is_corrupted = True
-            return sample_id, metrics
+            return sample_id, metrics, None
 
         metrics_dict = {}
         metrics_dict.update(compute_resolution(image.bgr))

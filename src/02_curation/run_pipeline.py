@@ -331,18 +331,24 @@ def render_duplicate_sections(title: str, sections: list[dict[str, object]]) -> 
             removed_b64 = get_base64_image(str(removed.get("filepath", "")))
             if not kept_b64 or not removed_b64:
                 continue
+            import os
+            kept_filename = os.path.basename(str(kept.get("filepath", "")))
+            removed_filename = os.path.basename(str(removed.get("filepath", "")))
+            
             kept_metrics = f"<span class='badge'>blur {format_report_value(kept.get('blur_variance'))}</span> <span class='badge'>res {format_report_value(kept.get('width'))}x{format_report_value(kept.get('height'))}</span>"
             removed_metrics = f"<span class='badge'>blur {format_report_value(removed.get('blur_variance'))}</span> <span class='badge'>res {format_report_value(removed.get('width'))}x{format_report_value(removed.get('height'))}</span>"
             pair_cards.append(
-                '<div class="example-pair" style="display:flex;gap:10px;border:1px solid #d9e2ec;border-radius:8px;padding:10px;background:#fbfcfd;">'
-                f'<div style="flex:1;"><img src="data:image/jpeg;base64,{kept_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:6px;">'
-                f'<span class="status-kept" style="display:block;margin-top:4px;font-size:14px;">Conservada</span>'
-                f'<small style="display:block;color:#52606d;margin-top:2px;">{html.escape(str(kept.get("source_dataset", "")))} | {html.escape(str(kept.get("label", "")))}</small>'
-                f'<div style="margin-top:4px;">{kept_metrics}</div></div>'
-                f'<div style="flex:1;"><img src="data:image/jpeg;base64,{removed_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:6px;">'
-                f'<span class="status-removed" style="display:block;margin-top:4px;font-size:14px;">Eliminada</span>'
-                f'<small style="display:block;color:#52606d;margin-top:2px;">{html.escape(str(removed.get("source_dataset", "")))} | {html.escape(str(removed.get("label", "")))}</small>'
-                f'<div style="margin-top:4px;">{removed_metrics}</div></div>'
+                '<div class="example-pair" style="display:flex;gap:10px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#ffffff;box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);">'
+                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{kept_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;">'
+                f'<span class="status-kept" style="display:block;margin-top:8px;font-size:14px;">Conservada</span>'
+                f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(kept.get("source_dataset", "")))} | {html.escape(str(kept.get("label", "")))}</small>'
+                f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(kept_filename)}">{html.escape(kept_filename)}</code>'
+                f'<div style="margin-top:6px;">{kept_metrics}</div></div>'
+                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{removed_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;">'
+                f'<span class="status-removed" style="display:block;margin-top:8px;font-size:14px;">Eliminada</span>'
+                f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(removed.get("source_dataset", "")))} | {html.escape(str(removed.get("label", "")))}</small>'
+                f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(removed_filename)}">{html.escape(removed_filename)}</code>'
+                f'<div style="margin-top:6px;">{removed_metrics}</div></div>'
                 "</div>"
             )
         blocks.append(
@@ -1249,6 +1255,10 @@ def main() -> None:
     logger.info("=== PIPELINE FINALIZADO ===")
     logger.info("Reporte HTML: %s", report_dir / "report.html")
     logger.info("Dataset exportado: %s", export_dir)
+    logger.info("")
+    logger.info("[bold cyan]¡Para explorar visualmente el dataset resultante, ejecuta:[/bold cyan]")
+    logger.info(f"    [bold green]make app DATASET=\"{dataset_name}\"[/bold green]")
+    logger.info("[bold cyan]Y abre http://localhost:5152 en tu navegador.[/bold cyan]")
 
 
 if __name__ == "__main__":

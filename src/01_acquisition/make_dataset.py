@@ -76,6 +76,44 @@ def discover_datasets(raw_data_dir: Path) -> List[DatasetConfig]:
     return configs
 
 
+def _sanitize_coco_json(json_path: Path, data_dir: Path) -> None:
+    """
+    Purga las referencias a imágenes (y sus anotaciones) que no existen físicamente en disco.
+    Previene KeyError fatales en el importador de FiftyOne causados por datasets corrompidos.
+    """
+    try:
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        if "images" not in data:
+            return
+            
+        valid_images = []
+        valid_image_ids = set()
+        
+        for img in data["images"]:
+            file_name = img.get("file_name")
+            if file_name and (data_dir / file_name).exists():
+                valid_images.append(img)
+                valid_image_ids.add(img.get("id"))
+                
+        if len(valid_images) == len(data["images"]):
+            return
+            
+        logger.warning(f"Sanitizando JSON: Eliminadas {len(data['images']) - len(valid_images)} imágenes fantasma en {json_path.name}")
+        data["images"] = valid_images
+        
+        if "annotations" in data:
+            data["annotations"] = [ann for ann in data["annotations"] if ann.get("image_id") in valid_image_ids]
+            
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+            
+    except Exception as e:
+        logger.error(f"Fallo al intentar sanitizar el JSON COCO {json_path.name}: {e}")
+
+
 def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
     """
     Crea o carga el dataset unificado y orquesta la ingesta de las fuentes descubiertas.
@@ -106,6 +144,8 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
                         if not json_files:
                             continue
                             
+                        _sanitize_coco_json(json_files[0], split_path)
+                            
                         dataset.add_dir(
                             dataset_type=config.dataset_type,
                             data_path=str(split_path),
@@ -116,6 +156,7 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
                 else:
                     json_files = list(config.path.glob("*.json"))
                     if json_files:
+                        _sanitize_coco_json(json_files[0], config.path)
                         dataset.add_dir(
                             dataset_type=config.dataset_type,
                             data_path=str(config.path),

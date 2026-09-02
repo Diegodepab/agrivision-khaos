@@ -1,4 +1,4 @@
-.PHONY: help setup quality deduplicate pipeline app docs clean
+.PHONY: help setup quality deduplicate pipeline app export docs clean
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -58,6 +58,11 @@ app:
 	@echo "Levantando FiftyOne App..."
 	DATASET_NAME=$(DATASET) docker compose up -d fiftyone
 	@echo "FiftyOne App disponible en: http://localhost:5152"
+
+## Exporta el dataset manualmente después de haber sido validado en la UI
+export:
+	@echo "Exportando dataset validado manualmente (HitL)..."
+	$(DOCKER_CMD) src/02_curation/export_dataset.py --dataset $(DATASET) --output-formats $(OUTPUT_FORMATS)
 
 ## Levanta la documentación de Zensical
 docs:

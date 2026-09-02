@@ -81,6 +81,10 @@ data/*
 data/raw/*
 !data/raw/.gitkeep
 
+# exclude reports from source control by default
+reports/*
+
+
 # Mac OS-specific storage files
 .DS_Store
 

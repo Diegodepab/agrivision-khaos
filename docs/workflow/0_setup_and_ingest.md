@@ -40,7 +40,7 @@ Con los datos en su sitio, es el momento de construir la infraestructura y volca
 make setup
 ```
 
-*(Opcional: Si quieres ponerle un nombre específico a tu dataset en la base de datos, puedes usar `make setup DATASET="mi_proyecto_secreto"`. Por defecto usará `agrivision-dataset`).*
+*(Opcional: Si quieres ponerle un nombre específico a tu dataset en la base de datos, puedes usar `make setup DATASET="mi_proyecto"`. Por defecto usará `agrivision-dataset`).*
 
 <details>
 <summary>⚙️ ¿Qué ocurre internamente al ejecutar este comando?</summary>

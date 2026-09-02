@@ -10,6 +10,22 @@ Este framework de *Data-Centric AI* actúa como el motor fundacional para ingeri
 
 Si necesitas generar un dataset limpio de inmediato sin entrar en detalles técnicos, sigue este flujo de 3 pasos (Clone-and-Run):
 
+### 0. Requisitos Previos
+Asegúrate de tener instalados **Docker** y **GNU Make** en tu máquina (o en tu WSL si usas Windows). Si no tienes `make`, instálalo en un segundo:
+```bash
+# En Ubuntu / WSL
+sudo apt update && sudo apt install make
+```
+
+<details>
+<summary><strong>¿No tienes permisos de administrador para instalar <code>make</code>? (Despliega aquí)</strong></summary>
+<p>Si estás en un equipo corporativo restringido y no tienes acceso a <code>sudo</code>, puedes usar Docker directamente. <code>make</code> es solo un atajo para que los comandos sean más cortos. 
+En lugar de <code>make pipeline DATASET="mi_dataset" RAW_DIR="data/raw"</code>, puedes ejecutar el comando crudo:</p>
+<pre><code>docker compose run --rm fiftyone uv run python src/02_curation/run_pipeline.py --dataset "mi_dataset" --raw-dir "data/raw"</code></pre>
+<p>Y para abrir la aplicación visual en lugar de <code>make app DATASET="mi_dataset"</code>:</p>
+<pre><code>DATASET_NAME="mi_dataset" docker compose up -d fiftyone</code></pre>
+</details>
+
 ### 1. Prepara tus Datos Crudos
 Clona este repositorio y coloca todas las carpetas con tus datasets (en formato COCO, YOLO, o carpetas por clase) dentro de `data/raw/`.
 

@@ -13,6 +13,7 @@ OUTPUT_FORMATS ?= datumaro,coco,yolo,classification
 CLEANLAB_MODE ?= auto
 EXPORT_DIR ?= data/processed
 REPORT_DIR ?= reports/pipeline
+ONTOLOGY ?=
 MAX_PHASE_DROP ?= 0.40
 MAX_TOTAL_DROP ?= 0.65
 
@@ -48,8 +49,15 @@ pipeline:
 		--cleanlab-mode $(CLEANLAB_MODE) \
 		--export-dir $(EXPORT_DIR) \
 		--report-dir $(REPORT_DIR) \
+		$(if $(ONTOLOGY),--ontology-map $(ONTOLOGY)) \
 		--max-phase-drop $(MAX_PHASE_DROP) \
 		--max-total-drop $(MAX_TOTAL_DROP)
+	@$(MAKE) fix-perms
+
+## Transfiere la propiedad de los archivos generados del contenedor root al usuario actual
+fix-perms:
+	@echo "Ajustando permisos de archivos generados..."
+	@docker compose run --rm --entrypoint /bin/sh fiftyone -c "chown -R $$(id -u):$$(id -g) data/ reports/"
 
 ## Levanta la aplicación FiftyOne para explorar los datos
 app:

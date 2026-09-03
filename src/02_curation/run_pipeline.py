@@ -12,6 +12,7 @@ import re
 import shutil
 import sys
 import unicodedata
+import yaml
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -245,42 +246,54 @@ def annotate_sources(dataset: fo.Dataset, raw_dir: Path, sources: list[dict[str,
 
 def evaluate_quality(sample: fo.Sample) -> Decision:
     if flag(sample, "is_corrupted"):
-        return Decision("removed", "quality", "corrupted_or_unreadable", 1.0)
+        return Decision("removed", "quality", "Corrupta", 1.0)
     if flag(sample, "has_watermark"):
-        return Decision("removed", "quality", "watermark_detected", 0.99)
+        return Decision("removed", "quality", "Marca de Agua", 0.99)
     if flag(sample, "low_resolution"):
-        return Decision("removed", "quality", "low_resolution", 0.98)
+        return Decision("removed", "quality", "Baja Resolución", 0.98)
     if flag(sample, "has_smearing"):
-        return Decision("removed", "quality", "border_smearing_detected", 0.92)
+        return Decision("removed", "quality", "Bordes Estirados (Smearing)", 0.92)
 
     blur = metric(sample, "blur_variance")
-    if blur is not None and blur < 30.0:
-        return Decision("removed", "quality", "severe_blur", 0.94)
-    if blur is not None and blur < 70.0:
-        return Decision("review", "quality", "borderline_blur", 0.72)
+    if blur is not None and blur < 15.0:
+        return Decision("removed", "quality", "Desenfoque Severo", 0.94)
+    if blur is not None and blur < 25.0:
+        return Decision("review", "quality", "Desenfoque Leve", 0.72)
 
     brightness = metric(sample, "brightness_mean")
     p5 = metric(sample, "brightness_p5")
     p95 = metric(sample, "brightness_p95")
     if brightness is not None and (brightness < 18.0 or brightness > 245.0):
-        return Decision("removed", "quality", "extreme_brightness", 0.90)
+        return Decision("removed", "quality", "Brillo Extremo", 0.90)
     if (p95 is not None and p95 < 45.0) or (p5 is not None and p5 > 210.0):
-        return Decision("review", "quality", "borderline_brightness", 0.70)
+        return Decision("review", "quality", "Brillo Anómalo", 0.70)
 
     return Decision("kept", "quality", "quality_passed", 1.0, keep_reason="quality_passed")
 
 
 def render_example_card(example: dict[str, object], caption: str | None = None) -> str:
+    import os
     b64 = get_base64_image(str(example["filepath"]))
     if not b64:
         return ""
-    subtitle = caption or f"{example.get('source_dataset', '')} | {example.get('label', '')}"
+    
+    source = str(example.get('source_dataset', ''))
+    if len(source) > 15:
+        source = source[:15] + "..."
+        
+    filename = os.path.basename(str(example["filepath"]))
+    if len(filename) > 15:
+        filename = filename[:15] + "..."
+        
+    label = str(example.get('label', ''))
+    base_file = os.path.basename(str(example.get('filepath', '')))
+    
+    subtitle = f"<strong>{html.escape(source)}</strong> | {html.escape(label)}<br><small title='{html.escape(base_file)}'>File: {html.escape(filename)}</small>"
+    
     details = [
         f"fase {format_report_value(example.get('phase'))}",
         f"conf {format_report_value(example.get('confidence'))}",
     ]
-    if example.get("reason"):
-        details.insert(0, str(example.get("reason")))
     metrics = (
         f"blur {format_report_value(example.get('blur_variance'))}",
         f"res {format_report_value(example.get('width'))}x{format_report_value(example.get('height'))}",
@@ -360,25 +373,83 @@ def render_duplicate_sections(title: str, sections: list[dict[str, object]]) -> 
     return f"<h2>{html.escape(title)}</h2>{''.join(blocks)}"
 
 
-def render_count_table(title: str, rows: dict[str, dict[str, int]]) -> str:
+def render_count_table(title: str, rows: dict[str, dict[str, int]], show_drop_rates: bool = False) -> str:
     body = []
     for name, counts in rows.items():
         total = sum(counts.values())
-        body.append(
+        kept = counts.get('kept', 0)
+        review = counts.get('review', 0)
+        removed_q = counts.get('removed_quality', counts.get('removed', 0))
+        removed_d = counts.get('removed_duplicates', 0)
+        total_removed = removed_q + removed_d
+        
+        row_html = (
             "<tr>"
             f"<td>{html.escape(name)}</td>"
             f"<td class='number-cell'>{total}</td>"
-            f"<td class='number-cell'>{counts.get('kept', 0)}</td>"
-            f"<td class='number-cell'>{counts.get('review', 0)}</td>"
-            f"<td class='number-cell removed-col'>{counts.get('removed', 0)}</td>"
-            "</tr>"
+            f"<td class='number-cell'>{kept}</td>"
+            f"<td class='number-cell'>{review}</td>"
+            f"<td class='number-cell removed-col'>{total_removed}</td>"
         )
+        
+        if show_drop_rates:
+            pct_q = (removed_q / total * 100) if total > 0 else 0.0
+            pct_d = (removed_d / total * 100) if total > 0 else 0.0
+            q_color = "#991b1b" if pct_q > 30 else "#475569"
+            q_weight = "bold" if pct_q > 30 else "normal"
+            
+            row_html += (
+                f"<td class='number-cell' style='color:{q_color}; font-weight:{q_weight};'>{pct_q:.1f}%</td>"
+                f"<td class='number-cell' style='color:#64748b;'>{pct_d:.1f}%</td>"
+            )
+        
+        row_html += "</tr>"
+        body.append(row_html)
+        
+    header = (
+        "<table><thead><tr><th>Grupo</th><th class='number-cell'>Total</th><th class='number-cell'>Kept</th>"
+        "<th class='number-cell'>Review</th><th class='number-cell removed-col'>Removed</th>"
+    )
+    if show_drop_rates:
+        header += "<th class='number-cell'>% Descarte (Calidad)</th><th class='number-cell'>% Descarte (Duplicados)</th>"
+    header += "</tr></thead><tbody>"
+    
     return (
         f"<h2>{html.escape(title)}</h2>"
-        "<table><thead><tr><th>Grupo</th><th class='number-cell'>Total</th><th class='number-cell'>Kept</th>"
-        "<th class='number-cell'>Review</th><th class='number-cell removed-col'>Removed</th></tr></thead><tbody>"
+        + header
         + "".join(body)
         + "</tbody></table>"
+    )
+
+def render_contamination_matrix(cross_contamination: list[dict[str, object]]) -> str:
+    if not cross_contamination:
+        return ""
+        
+    items = []
+    for entry in cross_contamination:
+        ds = entry.get("datasets", [])
+        if len(ds) == 2:
+            items.append(
+                f"<li style='margin-bottom: 8px;'>"
+                f"<strong>{html.escape(ds[0])}</strong> &harr; <strong>{html.escape(ds[1])}</strong> : "
+                f"<span style='color: #ef4444; font-weight: bold;'>{entry.get('count')}</span> imágenes idénticas compartidas"
+                f"</li>"
+            )
+            
+    if not items:
+        return ""
+        
+    return (
+        "<div style='max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);'>"
+        "<h3 style='margin-top: 0; color: #0f172a;'>Fuga de Datos / Contaminación Cruzada</h3>"
+        "<p style='color: #64748b; font-size: 0.9em; margin-bottom: 16px;'>"
+        "Esta lista muestra pares de datasets que contienen imágenes idénticas. "
+        "<strong>Atención:</strong> Si vas a particionar la red neuronal por dataset, evita cruzar estos datasets entre *train* y *test* para no inflar las métricas de evaluación."
+        "</p>"
+        "<ul style='list-style-type: none; padding-left: 0; margin: 0; font-size: 0.95em; color: #334155;'>"
+        + "".join(items) +
+        "</ul>"
+        "</div>"
     )
 
 
@@ -393,34 +464,6 @@ def write_reports(
     copy_examples_by_reason(list(evidence.get("removed_by_reason", [])), report_dir / "discarded_examples")
     copy_examples_by_reason(list(evidence.get("review_by_reason", [])), report_dir / "review_examples")
     copy_duplicate_pair_gallery(list(evidence.get("duplicate_phases", [])), report_dir / "duplicate_examples")
-
-    md_lines = [
-        f"# Pipeline report: {dataset_name}",
-        "",
-        f"- Run: `{run_id}`",
-        f"- Initial samples: {summary['counts']['initial']}",
-        f"- Kept/exported: {summary['counts']['kept']}",
-        f"- Review: {summary['counts']['review']}",
-        f"- Removed: {summary['counts']['removed']}",
-        "",
-        "## Phase notes",
-    ]
-    for phase in summary["phases"]:
-        md_lines.append(f"- {phase['name']}: removed={phase['removed']}, review={phase['review']}, kept={phase['kept']}")
-        for note in phase["notes"]:
-            md_lines.append(f"  - {note}")
-    md_lines.extend(["", "## Razones de descarte"])
-    for section in evidence.get("removed_by_reason", []):
-        md_lines.append(f"- {section['reason']}: {section['count']} ejemplos")
-    md_lines.extend(["", "## Razones en revisión"])
-    for section in evidence.get("review_by_reason", []):
-        md_lines.append(f"- {section['reason']}: {section['count']} ejemplos")
-    md_lines.extend(["", "## Pares de duplicados"])
-    for section in evidence.get("duplicate_phases", []):
-        md_lines.append(f"- {section['phase']}: {section['removed']} descartadas, {section['review']} en revisión")
-        for note in section.get("notes", []):
-            md_lines.append(f"  - {note}")
-    (report_dir / "report.md").write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     html_doc = f"""<!doctype html>
 <html lang="es">
@@ -487,8 +530,33 @@ def write_reports(
       <div class="stat"><strong style="color: #fbbf24;">{summary['counts']['review']:,}</strong><span>En Revisión</span></div>
       <div class="stat"><strong style="color: #f87171;">{summary['counts']['removed']:,}</strong><span>Descartadas</span></div>
     </section>
+    
+    <div style="margin-top: 24px; padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <h3 style="margin: 0 0 12px; font-size: 1em; color: white;">Resumen de Fases</h3>
+      <ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 0.9em; line-height: 1.5;">
+        {''.join(f"<li><strong>{html.escape(p['name'])}</strong>: {p['removed']} descartadas | {p['review']} en revisión | {p['kept']} conservadas<br><span style='color:#94a3b8;'>{'<br>'.join(html.escape(n) for n in p['notes'])}</span></li>" for p in summary["phases"])}
+      </ul>
+    </div>
   </div>
-  {render_count_table("Evolucion por dataset origen", summary["groups"]["by_source"])}
+  
+  <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);">
+    <h3 style="margin-top: 0;">Sugerencia de Balanceo (Class Weights)</h3>
+    <p style="color: #64748b; font-size: 0.9em; margin-bottom: 16px;">Copia y pega este fragmento en tu código de entrenamiento para penalizar matemáticamente las clases mayoritarias y ayudar a la red a converger de forma equitativa.</p>
+    <div style="background: #0f172a; padding: 16px; border-radius: 8px; overflow-x: auto;">
+      <code style="color: #e2e8f0; background: transparent; font-size: 1em; padding: 0;">
+class_weights = {{<br>
+{''.join(f"    '{html.escape(cls)}': {weight},<br>" for cls, weight in summary.get('class_weights', {}).items())}
+}}<br><br>
+# PyTorch:<br>
+# weights_tensor = torch.tensor([class_weights[c] for c in classes], dtype=torch.float32)<br>
+# criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+      </code>
+    </div>
+  </div>
+
+  {render_contamination_matrix(list(evidence.get('cross_contamination', [])))}
+
+  {render_count_table("Evolucion por dataset origen", summary["groups"]["by_source"], show_drop_rates=True)}
   {render_count_table("Evolucion por etiqueta", summary["groups"]["by_label"])}
   {render_reason_sections("Ejemplos descartados por razon", list(evidence.get('removed_by_reason', [])), "No hay ejemplos descartados.")}
   {render_duplicate_sections("Duplicados y mantenimiento del original", list(evidence.get('duplicate_phases', [])))}
@@ -594,7 +662,7 @@ def run_quality_phase(
     return result
 
 
-def decision_for_tagged_duplicates(dataset: fo.Dataset, tag: str, phase: str) -> dict[str, Decision]:
+def decision_for_tagged_duplicates(dataset: fo.Dataset, tag: str, phase: str, reason_text: str) -> dict[str, Decision]:
     decisions = {}
     for sample in dataset.match_tags(tag):
         if current_status(sample) == "removed":
@@ -602,7 +670,7 @@ def decision_for_tagged_duplicates(dataset: fo.Dataset, tag: str, phase: str) ->
         decisions[sample.id] = Decision(
             status="removed",
             phase=phase,
-            reason=tag,
+            reason=reason_text,
             confidence=1.0,
             keep_reason="redundant_visual_cluster",
             cluster_id="",
@@ -624,7 +692,7 @@ def run_duplicate_phases(
     results = []
     logger.info("Detectando duplicados exactos con FiftyOne...")
     _, pairs = detect_exact_duplicates(dataset, "redundant_exact")
-    decisions = decision_for_tagged_duplicates(dataset, "redundant_exact", "exact_duplicates")
+    decisions = decision_for_tagged_duplicates(dataset, "redundant_exact", "exact_duplicates", "Redundante (Exacta)")
     active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
     notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
     exact_result = write_decisions(dataset, decisions, "exact_duplicates")
@@ -635,7 +703,7 @@ def run_duplicate_phases(
     logger.info("Detectando near-duplicates semanticos con FiftyOne...")
     try:
         _, pairs = detect_semantic_duplicates(dataset, "redundant_semantic", threshold=0.96)
-        decisions = decision_for_tagged_duplicates(dataset, "redundant_semantic", "semantic_duplicates")
+        decisions = decision_for_tagged_duplicates(dataset, "redundant_semantic", "semantic_duplicates", "Redundante (Semántica)")
         active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
         notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
         semantic_result = write_decisions(dataset, decisions, "semantic_duplicates")
@@ -648,7 +716,7 @@ def run_duplicate_phases(
     logger.info("Detectando aumentaciones por huella de color...")
     try:
         _, pairs = detect_augmentation_duplicates(dataset, "redundant_augmented", threshold=0.99)
-        decisions = decision_for_tagged_duplicates(dataset, "redundant_augmented", "augmentation_duplicates")
+        decisions = decision_for_tagged_duplicates(dataset, "redundant_augmented", "augmentation_duplicates", "Redundante (Aumentación)")
         active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
         notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
         augmented_result = write_decisions(dataset, decisions, "augmentation_duplicates")
@@ -686,10 +754,49 @@ def suggest_label_mappings(labels: list[str]) -> dict[str, Any]:
     return {"automatic": automatic, "candidates": candidates}
 
 
-def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str) -> tuple[PhaseResult, dict[str, Any]]:
+def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str, ontology_map: str | None, report_dir: Path) -> tuple[PhaseResult, dict[str, Any]]:
     labels = [label for label in dataset.values("source_label") if label]
     mapping = suggest_label_mappings(labels)
     result = PhaseResult(name="labels")
+    
+    automatic_map = {}
+    if ontology_map and Path(ontology_map).exists():
+        with open(ontology_map, "r", encoding="utf-8") as f:
+            user_ontology = yaml.safe_load(f) or {}
+            
+        # Invert yaml structure for processing
+        for normalized, originals in user_ontology.items():
+            if isinstance(originals, list):
+                for orig in originals:
+                    automatic_map[orig] = normalized
+        result.notes.append(f"Ontología de usuario aplicada desde {ontology_map}.")
+        
+    else:
+        # Generar proposed ontology
+        proposed = {norm: origs for norm, origs in mapping["automatic"].items()}
+        for label in set(labels):
+            if label not in automatic_map:
+                proposed.setdefault(label, []).append(label)
+                
+        proposed_path = report_dir / "proposed_ontology.yaml"
+        with open(proposed_path, "w", encoding="utf-8") as f:
+            f.write("# Sugerencias heurísticas de mapeo (puedes editar y pasar con --ontology-map)\n")
+            yaml.dump(proposed, f, allow_unicode=True, default_flow_style=False)
+        result.notes.append(f"Archivo de ontología sugerido generado en {proposed_path}.")
+        
+        # Use heuristics
+        for normalized, original_list in mapping["automatic"].items():
+            for original in original_list:
+                automatic_map[original] = normalized
+
+    if not dataset.has_sample_field("normalized_label"):
+        dataset.add_sample_field("normalized_label", fo.StringField)
+
+    for sample in dataset:
+        original = sample.get_field("source_label")
+        if original:
+            sample["normalized_label"] = automatic_map.get(original, original)
+            sample.save()
 
     if cleanlab_mode == "off":
         result.notes.append("Cleanlab desactivado.")
@@ -720,6 +827,13 @@ def grouped_counts(dataset: fo.Dataset) -> dict[str, dict[str, dict[str, int]]]:
     by_label: dict[str, Counter[str]] = defaultdict(Counter)
     for sample in dataset:
         status = current_status(sample)
+        if status == "removed":
+            curation = sample_field(sample, "curation")
+            if curation and curation.phase == "quality":
+                status = "removed_quality"
+            elif curation:
+                status = "removed_duplicates"
+                
         by_source[str(sample_field(sample, "source_dataset", "unknown") or "unknown")][status] += 1
         by_label[str(sample_field(sample, "normalized_label", "unknown") or "unknown")][status] += 1
     return {
@@ -888,7 +1002,20 @@ def build_curation_evidence(
     review_by_reason = collect_examples_by_reason(dataset, "review")
 
     duplicate_sections: list[dict[str, object]] = []
+    cross_contamination_counts = Counter()
+    
     for result in duplicate_results:
+        # Calculate cross contamination for all pairs
+        for kept_id, removed_id in result.duplicate_pairs:
+            try:
+                kept_ds = str(sample_field(dataset[kept_id], "source_dataset", "unknown"))
+                rem_ds = str(sample_field(dataset[removed_id], "source_dataset", "unknown"))
+                if kept_ds != rem_ds:
+                    pair_key = tuple(sorted([kept_ds, rem_ds]))
+                    cross_contamination_counts[pair_key] += 1
+            except Exception:
+                pass
+                
         pairs: list[dict[str, dict[str, object]]] = []
         for kept_id, removed_id in result.duplicate_pairs[:8]:
             try:
@@ -913,10 +1040,17 @@ def build_curation_evidence(
             }
         )
 
+    # Format cross contamination from Counter to a sorted list of dicts
+    cross_contamination = [
+        {"datasets": list(pair), "count": count}
+        for pair, count in cross_contamination_counts.most_common()
+    ]
+
     return {
         "removed_by_reason": removed_by_reason,
         "review_by_reason": review_by_reason,
         "duplicate_phases": duplicate_sections,
+        "cross_contamination": cross_contamination,
     }
 
 
@@ -1091,6 +1225,26 @@ def export_clean_dataset(
     return exports
 
 
+def compute_class_weights(dataset: fo.Dataset) -> dict[str, float]:
+    counts = Counter(
+        sample_field(sample, "normalized_label")
+        for sample in dataset
+        if current_status(sample) == "kept" and sample_field(sample, "normalized_label")
+    )
+    total_valid = sum(counts.values())
+    n_classes = len(counts)
+    if n_classes == 0:
+        return {}
+        
+    weights = {}
+    for cls, count in counts.items():
+        if count > 0:
+            weights[cls] = round(total_valid / (n_classes * count), 4)
+    
+    # Ordenar por label
+    return dict(sorted(weights.items()))
+
+
 def build_summary(
     dataset: fo.Dataset,
     dataset_name: str,
@@ -1102,6 +1256,7 @@ def build_summary(
     label_mapping: dict[str, Any],
 ) -> dict[str, Any]:
     counts = status_counts(dataset)
+    class_weights = compute_class_weights(dataset)
     return {
         "dataset": dataset_name,
         "run_id": run_id,
@@ -1118,6 +1273,7 @@ def build_summary(
         "phases": [asdict(phase) for phase in phases],
         "groups": grouped_counts(dataset),
         "label_mapping": label_mapping,
+        "class_weights": class_weights,
     }
 
 
@@ -1152,6 +1308,7 @@ def main() -> None:
     parser.add_argument("--cleanlab-mode", default="auto", choices=["auto", "on", "off"])
     parser.add_argument("--export-dir", default="data/processed")
     parser.add_argument("--report-dir", default="reports/pipeline")
+    parser.add_argument("--ontology-map", default=None, help="Ruta al archivo YAML de ontologia.")
     parser.add_argument("--max-phase-drop", type=float, default=0.40)
     parser.add_argument("--max-total-drop", type=float, default=0.65)
     args = parser.parse_args()
@@ -1201,7 +1358,7 @@ def main() -> None:
     )
     phases.extend(duplicate_results)
 
-    label_phase, label_mapping = run_label_phase(dataset, args.cleanlab_mode)
+    label_phase, label_mapping = run_label_phase(dataset, args.cleanlab_mode, args.ontology_map, report_dir)
     phases.append(label_phase)
 
     evidence = build_curation_evidence(dataset, duplicate_results)

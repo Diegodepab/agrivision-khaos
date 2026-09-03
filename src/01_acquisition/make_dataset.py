@@ -24,6 +24,33 @@ class DatasetConfig(BaseModel):
     dataset_type: type
     splits: Optional[List[str]] = None
     label_field: str = "ground_truth"
+    data_path: Optional[str] = None
+    labels_path: Optional[str] = None
+
+
+def _find_file_early_exit(root_dir: Path, target_exts: set[str], target_names: set[str] = None, max_depth: int = 3) -> Path | None:
+    """
+    Realiza una búsqueda en anchura (BFS) limitando la profundidad y retorna el primer archivo
+    que coincida con las extensiones o nombres, abortando la búsqueda tempranamente para no
+    comprometer el rendimiento.
+    """
+    stack = [(root_dir, 0)]
+    while stack:
+        current_dir, depth = stack.pop(0)
+        if depth > max_depth:
+            continue
+            
+        try:
+            for item in current_dir.iterdir():
+                if item.is_file():
+                    if item.suffix.lower() in target_exts or (target_names and item.name.lower() in target_names):
+                        return item
+                elif item.is_dir():
+                    stack.append((item, depth + 1))
+        except Exception:
+            pass
+            
+    return None
 
 
 def discover_datasets(raw_data_dir: Path) -> List[DatasetConfig]:
@@ -60,7 +87,44 @@ def discover_datasets(raw_data_dir: Path) -> List[DatasetConfig]:
             )
             continue
             
-        # Heurística 2: Clasificación de Imágenes (Carpetas)
+        # Heurística YOLO: Busca data.yaml o dataset.yaml
+        yolo_file = _find_file_early_exit(item, set(), {"data.yaml", "dataset.yaml"})
+        if yolo_file:
+            configs.append(
+                DatasetConfig(
+                    name=dataset_name,
+                    path=yolo_file.parent,
+                    dataset_type=fot.YOLOv5Dataset,
+                    label_field="yolo_detections",
+                )
+            )
+            continue
+            
+        # Heurística PASCAL VOC: Busca un archivo .xml
+        voc_file = _find_file_early_exit(item, {".xml"})
+        if voc_file:
+            annotations_dir = voc_file.parent
+            base_dir = annotations_dir.parent
+            data_path = None
+            # Intentar encontrar la carpeta de imágenes asumiendo que está junto a Annotations
+            for child in base_dir.iterdir():
+                if child.is_dir() and child.name.lower() in ("jpegimages", "images", "original images"):
+                    data_path = str(child.resolve())
+                    break
+                    
+            configs.append(
+                DatasetConfig(
+                    name=dataset_name,
+                    path=base_dir,
+                    dataset_type=fot.VOCDetectionDataset,
+                    label_field="voc_detections",
+                    data_path=data_path,
+                    labels_path=str(annotations_dir.resolve()),
+                )
+            )
+            continue
+            
+        # Heurística Fallback: Clasificación de Imágenes (Carpetas)
         splits = [s.name for s in item.iterdir() if s.is_dir() and s.name in ("train", "test", "valid", "val")]
         
         configs.append(
@@ -114,6 +178,51 @@ def _sanitize_coco_json(json_path: Path, data_dir: Path) -> None:
         logger.error(f"Fallo al intentar sanitizar el JSON COCO {json_path.name}: {e}")
 
 
+def _sanitize_yolo_yaml(yaml_path: Path) -> None:
+    """
+    Lee el archivo YAML de YOLO y corrige rutas absolutas que apuntan a máquinas locales (ej. Kaggle).
+    Asegura que 'train', 'val' y 'test' usen rutas relativas compatibles con el entorno actual.
+    """
+    try:
+        import yaml
+        with open(yaml_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+            
+        if not data:
+            return
+            
+        modified = False
+        for key in ["train", "val", "test"]:
+            if key in data and isinstance(data[key], str):
+                path_str = data[key]
+                # Si es ruta absoluta o estilo windows
+                if ":" in path_str or path_str.startswith("/") or "\\" in path_str:
+                    local_dir = yaml_path.parent
+                    folder_name = Path(path_str).name
+                    
+                    possible_paths = [
+                        Path(key),
+                        Path("images") / key,
+                        Path("images") / folder_name,
+                        Path("images"),
+                        Path(folder_name)
+                    ]
+                    
+                    for p in possible_paths:
+                        if (local_dir / p).exists():
+                            logger.warning(f"Sanitizando YAML: Ruta absoluta '{path_str}' en '{key}' cambiada a './{p}'")
+                            data[key] = f"./{p}"
+                            modified = True
+                            break
+                            
+        if modified:
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml.dump(data, f, default_flow_style=False)
+                
+    except Exception as e:
+        logger.error(f"Fallo al intentar sanitizar el YAML YOLO {yaml_path.name}: {e}")
+
+
 def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
     """
     Crea o carga el dataset unificado y orquesta la ingesta de las fuentes descubiertas.
@@ -164,6 +273,32 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
                             label_field=config.label_field,
                             tags=[config.name],
                         )
+            
+            elif config.dataset_type == fot.YOLOv5Dataset:
+                yaml_files = list(config.path.glob("*.yaml"))
+                if yaml_files:
+                    _sanitize_yolo_yaml(yaml_files[0])
+                
+                dataset.add_dir(
+                    dataset_dir=str(config.path),
+                    dataset_type=config.dataset_type,
+                    label_field=config.label_field,
+                    tags=[config.name],
+                )
+                
+            elif config.dataset_type == fot.VOCDetectionDataset:
+                kwargs = {
+                    "dataset_dir": str(config.path),
+                    "dataset_type": config.dataset_type,
+                    "label_field": config.label_field,
+                    "tags": [config.name],
+                }
+                if config.data_path:
+                    kwargs["data_path"] = config.data_path
+                if config.labels_path:
+                    kwargs["labels_path"] = config.labels_path
+                    
+                dataset.add_dir(**kwargs)
             
             elif config.dataset_type == fot.ImageClassificationDirectoryTree:
                 if config.splits:

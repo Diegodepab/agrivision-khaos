@@ -238,24 +238,17 @@ def compute_resolution(image_bgr: np.ndarray) -> dict[str, int | bool]:
     }
 
 
-def compute_blur(image_bgr: np.ndarray) -> dict[str, float]:
-    """
-    Calcula la varianza del Laplaciano sobre la imagen o el recorte.
-    Utiliza umbralización de Otsu para aislar la hoja del fondo y no penalizar bordes lisos artificiales.
-    """
+def get_leaf_mask(image_bgr: np.ndarray) -> np.ndarray | None:
+    """Extrae una máscara que aísla la hoja del fondo usando Otsu en saturación y brillo."""
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    
-    # Extraer el canal de saturación
     saturation = hsv[:, :, 1]
     
-    # Intentar segmentación por Otsu en el canal de saturación (ignora fondos blancos/grises/negros)
     try:
         _, mask = cv2.threshold(saturation, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     except Exception:
         mask = None
         
-    # Si la máscara es casi toda negra o toda blanca, fallback a Otsu en escala de grises
     if mask is not None:
         mask_ratio = np.sum(mask > 0) / mask.size
         if mask_ratio < 0.05 or mask_ratio > 0.95:
@@ -263,7 +256,15 @@ def compute_blur(image_bgr: np.ndarray) -> dict[str, float]:
                 _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             except Exception:
                 mask = None
+    return mask
 
+
+def compute_blur(image_bgr: np.ndarray, mask: np.ndarray | None = None) -> dict[str, float]:
+    """
+    Calcula la varianza del Laplaciano sobre la imagen o el recorte.
+    Utiliza la máscara de Otsu para aislar la hoja del fondo y no penalizar bordes lisos artificiales.
+    """
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     laplacian = cv2.Laplacian(gray, cv2.CV_64F)
     
     if mask is not None and np.any(mask > 0):
@@ -275,13 +276,24 @@ def compute_blur(image_bgr: np.ndarray) -> dict[str, float]:
     return {"blur_variance": variance}
 
 
-def compute_brightness(image_bgr: np.ndarray) -> dict[str, float]:
+def compute_brightness(image_bgr: np.ndarray, mask: np.ndarray | None = None) -> dict[str, float]:
     """
     Calcula métricas de iluminación extrema usando el canal Value (HSV).
-    HSV aísla luminancia de crominancia y evita sesgos por el tono foliar.
+    Si se proporciona una máscara, calcula las métricas únicamente sobre los píxeles
+    de biomasa, ignorando fondos artificiales puros.
     """
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
     v_channel = hsv[:, :, 2]
+
+    if mask is not None and np.any(mask > 0):
+        v_channel = v_channel[mask > 0]
+
+    if v_channel.size == 0:
+        return {
+            "brightness_mean": 0.0,
+            "brightness_p5": 0.0,
+            "brightness_p95": 0.0,
+        }
 
     p5, p95 = np.percentile(
         v_channel, [LOW_BRIGHTNESS_PERCENTILE, HIGH_BRIGHTNESS_PERCENTILE]
@@ -455,10 +467,11 @@ def process_image(
             metrics.is_corrupted = True
             return sample_id, metrics, None
 
+        mask = get_leaf_mask(image.bgr)
         metrics_dict = {}
         metrics_dict.update(compute_resolution(image.bgr))
-        metrics_dict.update(compute_blur(image.bgr))
-        metrics_dict.update(compute_brightness(image.bgr))
+        metrics_dict.update(compute_blur(image.bgr, mask))
+        metrics_dict.update(compute_brightness(image.bgr, mask))
         metrics_dict.update(compute_smearing(image.bgr, image.alpha))
         metrics = QualityMetrics(**metrics_dict)
         if should_run_ocr(metrics):
@@ -479,7 +492,8 @@ def process_image(
                 x1, y1 = max(0, x1), max(0, y1)
                 if x2 > x1 and y2 > y1:
                     crop = image.bgr[y1:y2, x1:x2]
-                    box_blurs.append(compute_blur(crop)["blur_variance"])
+                    crop_mask = get_leaf_mask(crop)
+                    box_blurs.append(compute_blur(crop, crop_mask)["blur_variance"])
                 else:
                     box_blurs.append(0.0)
                     

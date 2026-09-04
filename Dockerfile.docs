@@ -8,11 +8,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 
 # Build the static site (output goes to /app/site by default)
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --only-group docs --no-install-project
 
 COPY . .
 
-RUN uv run zensical build
+RUN uv run --no-sync zensical build
 
 # --- Stage 2: Serve with Nginx ---
 FROM nginx:alpine

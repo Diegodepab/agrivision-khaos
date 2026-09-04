@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: Install core and development dependencies
+        run: uv sync --locked --group dev
+      - name: Validate Python syntax
+        run: uv run python -m compileall -q src tests
+      - name: Detect undefined names and invalid Python constructs
+        run: uv run ruff check --select E4,E7,E9,F,I src tests
+      - name: Run unit tests
+        run: uv run python -m unittest -v
+      - name: Smoke-test synthetic generator and static dry-run
+        run: |
+          uv run agrivision-mock --output-dir /tmp/agrivision-mock --samples-per-format 2
+          uv run agrivision-pipeline --dataset ci-mock --raw-dir /tmp/agrivision-mock --dry-run --dry-run-report /tmp/agrivision-dry-run.json
+          uv run agrivision-preflight --raw-dir /tmp/agrivision-mock --output-dir /tmp/agrivision-output --cache-dir /tmp/agrivision-cache --minimum-free-gb 0 --report /tmp/agrivision-preflight.json
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build -t agrivision-khaos:ci .
+      - name: Verify installed commands
+        run: docker run --rm agrivision-khaos:ci agrivision-pipeline --help
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AGRIVISION_RUN_INTEGRATION: "1"
+      FIFTYONE_DATABASE_URI: mongodb://localhost:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --locked
+      - name: Run Mongo/FiftyOne integration test
+        run: uv run python -m unittest -v tests.test_integration_pipeline

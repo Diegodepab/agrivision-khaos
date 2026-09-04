@@ -1,4 +1,6 @@
-FROM python:3.14-slim
+FROM python:3.13-slim
+
+ARG TORCH_EXTRA=cpu
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -19,8 +21,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:/opt/venv/bin:${PATH}"
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev --no-install-project --extra "${TORCH_EXTRA}"
 
 COPY . .
+RUN uv sync --frozen --no-dev --extra "${TORCH_EXTRA}"
 
-CMD ["uv", "run", "python", "src/02_curation/compute_quality_metrics.py", "--workers", "4"]
+CMD ["uv", "run", "--no-sync", "agrivision-quality", "--workers", "4"]

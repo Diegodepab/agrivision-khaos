@@ -1,25 +1,35 @@
 services:
   mongo:
-    image: mongo:6.0
+    image: mongo:7.0
     restart: always
     volumes:
       - fiftyone-db:/data/db
 
   fiftyone:
-    build: .
+    build:
+      context: .
+      args:
+        TORCH_EXTRA: "${TORCH_EXTRA:-cpu}"
     working_dir: /workspace
     shm_size: '4gb'
     volumes:
       - .:/workspace
+      - "${RAW_DATA_HOST_PATH:-./data/raw}:/datasets/raw:ro"
+      - "${PROCESSED_DATA_HOST_PATH:-./data/processed}:/datasets/processed"
+      - "${CACHE_DATA_HOST_PATH:-./data/cache}:/datasets/cache"
+      - "${REPORTS_HOST_PATH:-./reports}:/workspace/reports"
     environment:
       - FIFTYONE_DATABASE_URI=mongodb://mongo:27017/
+      - FIFTYONE_MODEL_ZOO_DIR=/datasets/cache/fiftyone-models
+      - TORCH_HOME=/datasets/cache/torch
     depends_on:
       - mongo
     ports:
-      - "${FIFTYONE_PORT:-5151}:5151"
+      - "${FIFTYONE_BIND_ADDRESS:-127.0.0.1}:${FIFTYONE_PORT:-5151}:5151"
     command:
       - uv
       - run
+      - --no-sync
       - fiftyone
       - app
       - launch
@@ -34,7 +44,7 @@ services:
       context: .
       dockerfile: Dockerfile.docs
     ports:
-      - "8080:80"
+      - "${DOCS_BIND_ADDRESS:-127.0.0.1}:${DOCS_PORT:-8080}:80"
     restart: always
 
 volumes:

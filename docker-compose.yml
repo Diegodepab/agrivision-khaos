@@ -8,6 +8,7 @@ services:
   fiftyone:
     build: .
     working_dir: /workspace
+    shm_size: '4gb'
     volumes:
       - .:/workspace
     environment:

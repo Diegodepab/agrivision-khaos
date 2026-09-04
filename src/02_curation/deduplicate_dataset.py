@@ -18,10 +18,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import torch
+
 # Modelo de extracción de características para la detección semántica.
-# ResNet50 ofrece mayor profundidad y discriminación de texturas que MobileNetV2,
-# lo cual es relevante para distinguir lesiones foliares reales de variaciones lumínicas.
-SIMILARITY_MODEL = "resnet50-imagenet-torch"
+# Si hay GPU (CUDA), usamos ResNet50 para obtener máxima precisión en texturas.
+# Si solo hay CPU, caemos graciosamente a MobileNetV2, que es 10x más rápido.
+SIMILARITY_MODEL = "resnet50-imagenet-torch" if torch.cuda.is_available() else "mobilenet-v2-imagenet-torch"
 
 
 def load_dataset(dataset_name: str) -> fo.Dataset:
@@ -181,7 +183,7 @@ def _compute_similarity(dataset: fo.Dataset, brain_key: str) -> "fob.SimilarityI
         brain_key=brain_key,
         metric="cosine",
         batch_size=16,
-        num_workers=2,  # Paraleliza la lectura de imágenes desde el disco
+        num_workers=0,  # CRÍTICO: Previene el colapso de /dev/shm en Docker al usar el hilo principal
     )
 
 

@@ -125,17 +125,31 @@ def discover_datasets(raw_data_dir: Path) -> List[DatasetConfig]:
             continue
             
         # Heurística Fallback: Clasificación de Imágenes (Carpetas)
-        splits = [s.name for s in item.iterdir() if s.is_dir() and s.name in ("train", "test", "valid", "val")]
+        # Buscamos la primera imagen (hasta 5 niveles de profundidad) para deducir la ruta real de las clases
+        image_file = _find_file_early_exit(item, {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}, max_depth=5)
         
-        configs.append(
-            DatasetConfig(
-                name=dataset_name,
-                path=item,
-                dataset_type=fot.ImageClassificationDirectoryTree,
-                splits=splits if splits else None,
-                label_field="original_label",
+        if image_file:
+            # image_file.parent es la carpeta de la clase (ej. 'Anthracnose')
+            # image_file.parent.parent es donde están todas las carpetas de clases
+            base_dir = image_file.parent.parent
+            
+            # Si el abuelo es una carpeta de split (train, val, test), entonces el bisabuelo es la raíz del dataset
+            if base_dir.name.lower() in ("train", "test", "valid", "val"):
+                base_dir = base_dir.parent
+                
+            splits = [s.name for s in base_dir.iterdir() if s.is_dir() and s.name.lower() in ("train", "test", "valid", "val")]
+            
+            configs.append(
+                DatasetConfig(
+                    name=dataset_name,
+                    path=base_dir,
+                    dataset_type=fot.ImageClassificationDirectoryTree,
+                    splits=splits if splits else None,
+                    label_field="original_label",
+                )
             )
-        )
+        else:
+            logger.warning(f"No se detectaron imágenes en {item.name}, omitiendo dataset.")
         
     return configs
 
@@ -233,6 +247,7 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
 
     dataset = fo.Dataset(dataset_name)
     dataset.persistent = True
+    dataset.media_type = "image"
 
     configs = discover_datasets(raw_data_dir)
     
@@ -276,15 +291,21 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
             
             elif config.dataset_type == fot.YOLOv5Dataset:
                 yaml_files = list(config.path.glob("*.yaml"))
+                yaml_path = None
                 if yaml_files:
                     _sanitize_yolo_yaml(yaml_files[0])
+                    yaml_path = str(yaml_files[0].resolve())
                 
-                dataset.add_dir(
-                    dataset_dir=str(config.path),
-                    dataset_type=config.dataset_type,
-                    label_field=config.label_field,
-                    tags=[config.name],
-                )
+                kwargs = {
+                    "dataset_dir": str(config.path),
+                    "dataset_type": config.dataset_type,
+                    "label_field": config.label_field,
+                    "tags": [config.name],
+                }
+                if yaml_path:
+                    kwargs["yaml_path"] = yaml_path
+                    
+                dataset.add_dir(**kwargs)
                 
             elif config.dataset_type == fot.VOCDetectionDataset:
                 kwargs = {
@@ -301,22 +322,36 @@ def create_unified_dataset(dataset_name: str, raw_data_dir: Path) -> fo.Dataset:
                 dataset.add_dir(**kwargs)
             
             elif config.dataset_type == fot.ImageClassificationDirectoryTree:
-                if config.splits:
-                    for split in config.splits:
-                        split_path = config.path / split
-                        dataset.add_dir(
-                            dataset_dir=str(split_path),
-                            dataset_type=config.dataset_type,
-                            label_field=config.label_field,
-                            tags=[config.name, split],
-                        )
+                # Ingestión manual robusta para filtrar archivos basura (.docx, .txt, etc.)
+                valid_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
+                samples = []
+                
+                splits_to_process = config.splits if config.splits else [None]
+                
+                for split in splits_to_process:
+                    split_path = config.path / split if split else config.path
+                    if not split_path.exists():
+                        continue
+                        
+                    for cls_dir in split_path.iterdir():
+                        if not cls_dir.is_dir():
+                            continue
+                            
+                        label = cls_dir.name
+                        for img_path in cls_dir.iterdir():
+                            if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                                sample = fo.Sample(filepath=str(img_path))
+                                sample[config.label_field] = fo.Classification(label=label)
+                                if split:
+                                    sample.tags.extend([config.name, split])
+                                else:
+                                    sample.tags.append(config.name)
+                                samples.append(sample)
+                                
+                if samples:
+                    dataset.add_samples(samples)
                 else:
-                    dataset.add_dir(
-                        dataset_dir=str(config.path),
-                        dataset_type=config.dataset_type,
-                        label_field=config.label_field,
-                        tags=[config.name],
-                    )
+                    logger.warning(f"No se encontraron imágenes válidas en {config.name}")
                     
         except Exception as e:
             logger.error(f"Error al ingestar {config.name}: {str(e)}")

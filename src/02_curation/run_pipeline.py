@@ -189,11 +189,12 @@ def extract_sample_label(sample: fo.Sample, raw_dir: Path) -> str:
         if label.lower() not in {"dataset", "data", "images", "img", "train", "test", "val", "valid"}:
             return label
 
-    detections = sample_field(sample, "coco_detections")
-    if detections is not None and getattr(detections, "detections", None):
-        labels = sorted({det.label for det in detections.detections if getattr(det, "label", None)})
-        if labels:
-            return ",".join(labels)
+    for det_field in ["coco_detections", "yolo_detections", "voc_detections"]:
+        detections = sample_field(sample, det_field)
+        if detections is not None and getattr(detections, "detections", None):
+            labels = sorted({det.label for det in detections.detections if getattr(det, "label", None)})
+            if labels:
+                return ",".join(labels)
 
     try:
         parts = Path(sample.filepath).resolve().relative_to(raw_dir.resolve()).parts
@@ -306,8 +307,7 @@ def render_example_card(example: dict[str, object], caption: str | None = None) 
     return (
         '<article class="example">'
         f'<img src="data:image/jpeg;base64,{b64}" alt="">'
-        f"<strong>{html.escape(str(example.get('reason', 'sample')))}</strong>"
-        f"<span>{html.escape(subtitle)}</span>"
+        f"<span>{subtitle}</span>"
         f"<small>{html.escape(' | '.join(details))}</small>"
         f"<div style='margin-top: 6px;'>{metric_badges}</div>"
         "</article>"
@@ -534,7 +534,12 @@ def write_reports(
     <div style="margin-top: 24px; padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
       <h3 style="margin: 0 0 12px; font-size: 1em; color: white;">Resumen de Fases</h3>
       <ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 0.9em; line-height: 1.5;">
-        {''.join(f"<li><strong>{html.escape(p['name'])}</strong>: {p['removed']} descartadas | {p['review']} en revisión | {p['kept']} conservadas<br><span style='color:#94a3b8;'>{'<br>'.join(html.escape(n) for n in p['notes'])}</span></li>" for p in summary["phases"])}
+        {''.join(
+            f"<li><strong>{html.escape(p['name'])}</strong>"
+            f"{': ' + str(p['removed']) + ' descartadas | ' + str(p['review']) + ' en revisión | ' + str(p['kept']) + ' conservadas' if (p['removed'] > 0 or p['review'] > 0 or p['kept'] > 0) else ''}"
+            f"<br><span style='color:#94a3b8;'>{'<br>'.join(html.escape(n) for n in p['notes'])}</span></li>"
+            for p in summary["phases"]
+        )}
       </ul>
     </div>
   </div>
@@ -702,7 +707,8 @@ def run_duplicate_phases(
 
     logger.info("Detectando near-duplicates semanticos con FiftyOne...")
     try:
-        _, pairs = detect_semantic_duplicates(dataset, "redundant_semantic", threshold=0.96)
+        # Bajamos el umbral a 0.90 para atrapar hojas rotadas y reescaladas donde la red neuronal cambia ligeramente el embedding.
+        _, pairs = detect_semantic_duplicates(dataset, "redundant_semantic", threshold=0.90)
         decisions = decision_for_tagged_duplicates(dataset, "redundant_semantic", "semantic_duplicates", "Redundante (Semántica)")
         active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
         notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
@@ -715,7 +721,9 @@ def run_duplicate_phases(
 
     logger.info("Detectando aumentaciones por huella de color...")
     try:
-        _, pairs = detect_augmentation_duplicates(dataset, "redundant_augmented", threshold=0.99)
+        # Bajamos el umbral a 0.92. Al rotar una imagen con fondo blanco, se generan 
+        # esquinas negras (padding) que alteran drásticamente el histograma de color general.
+        _, pairs = detect_augmentation_duplicates(dataset, "redundant_augmented", threshold=0.92)
         decisions = decision_for_tagged_duplicates(dataset, "redundant_augmented", "augmentation_duplicates", "Redundante (Aumentación)")
         active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
         notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)

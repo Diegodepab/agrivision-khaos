@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import argparse
+import hashlib
 import logging
 import os
 import shutil
@@ -6,6 +9,7 @@ import sys
 import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, fields
+from itertools import repeat
 from pathlib import Path
 from typing import Iterable
 
@@ -24,6 +28,7 @@ except ImportError:  # pragma: no cover - depende del entorno local
 
 
 from rich.logging import RichHandler
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -57,6 +62,9 @@ OCR_LANG = "eng"
 
 
 QUALITY_FIELD_SCHEMA = {
+    "quality.processing_error": fo.BooleanField,
+    "quality.error_message": fo.StringField,
+    "quality.asset_sha256": fo.StringField,
     "quality.is_corrupted": fo.BooleanField,
     "quality.blur_variance": fo.FloatField,
     "quality.brightness_mean": fo.FloatField,
@@ -80,6 +88,9 @@ FLAT_FIELD_SCHEMA = {
 class QualityMetrics:
     """Estructura tipada de métricas de calidad para inyección nativa."""
 
+    processing_error: bool = False
+    error_message: str = ""
+    asset_sha256: str = ""
     is_corrupted: bool = False
     blur_variance: float | None = None
     brightness_mean: float | None = None
@@ -96,6 +107,7 @@ class QualityMetrics:
 class DecodedImage:
     bgr: np.ndarray
     alpha: np.ndarray | None = None
+    sha256: str = ""
 
 
 class OcrEngine:
@@ -114,7 +126,12 @@ class OcrEngine:
         lang: str = OCR_LANG,
         max_workers: int = 4,
     ) -> None:
-        self.enabled = enabled and self._backend_available()
+        backend_available = self._backend_available() if enabled else False
+        if enabled and not backend_available:
+            raise RuntimeError(
+                "OCR está habilitado por política, pero pytesseract/tesseract no está disponible"
+            )
+        self.enabled = enabled
         self.min_confidence = min_confidence
         self.lang = lang
         self._semaphore = threading.Semaphore(max_workers)
@@ -152,12 +169,11 @@ class OcrEngine:
         except (TesseractError, OSError) as exc:
             if not self._warned_unavailable:
                 logger.warning(
-                    "OCR no disponible o mal configurado (%s); "
-                    "has_watermark quedará en False.",
+                    "OCR no disponible o mal configurado (%s); la muestra pasará a revisión.",
                     exc,
                 )
                 self._warned_unavailable = True
-            return False
+            raise RuntimeError(f"Falló Tesseract: {exc}") from exc
 
         confidences = data.get("conf", [])
         words = data.get("text", [])
@@ -221,20 +237,33 @@ def read_image(filepath: str) -> DecodedImage | None:
         return None
 
     if image.ndim == 2:
-        return DecodedImage(bgr=cv2.cvtColor(image, cv2.COLOR_GRAY2BGR))
+        return DecodedImage(
+            bgr=cv2.cvtColor(image, cv2.COLOR_GRAY2BGR),
+            sha256=hashlib.sha256(encoded).hexdigest(),
+        )
 
     if image.shape[2] == 4:
-        return DecodedImage(bgr=image[:, :, :3], alpha=image[:, :, 3])
+        return DecodedImage(
+            bgr=image[:, :, :3],
+            alpha=image[:, :, 3],
+            sha256=hashlib.sha256(encoded).hexdigest(),
+        )
 
-    return DecodedImage(bgr=image[:, :, :3])
+    return DecodedImage(
+        bgr=image[:, :, :3],
+        sha256=hashlib.sha256(encoded).hexdigest(),
+    )
 
 
-def compute_resolution(image_bgr: np.ndarray) -> dict[str, int | bool]:
+def compute_resolution(
+    image_bgr: np.ndarray,
+    min_valid_size: int = MIN_VALID_SIZE,
+) -> dict[str, int | bool]:
     h, w = image_bgr.shape[:2]
     return {
         "height": h,
         "width": w,
-        "low_resolution": bool(min(h, w) < MIN_VALID_SIZE),
+        "low_resolution": bool(min(h, w) < min_valid_size),
     }
 
 
@@ -449,7 +478,7 @@ def compute_smearing(
 
 
 def process_image(
-    sample_data: tuple[str, str, list[list[float]] | None],
+    sample_data: tuple[str, str, list[list[float]] | None, int],
     ocr_engine: OcrEngine,
 ) -> tuple[str, QualityMetrics | None, list[float] | None]:
     """
@@ -457,7 +486,7 @@ def process_image(
 
     Retorna métricas o None si hubo una excepción fatal imprevista.
     """
-    sample_id, filepath, bboxes = sample_data
+    sample_id, filepath, bboxes, min_valid_size = sample_data
 
     try:
         metrics = QualityMetrics()
@@ -469,7 +498,8 @@ def process_image(
 
         mask = get_leaf_mask(image.bgr)
         metrics_dict = {}
-        metrics_dict.update(compute_resolution(image.bgr))
+        metrics_dict["asset_sha256"] = image.sha256
+        metrics_dict.update(compute_resolution(image.bgr, min_valid_size))
         metrics_dict.update(compute_blur(image.bgr, mask))
         metrics_dict.update(compute_brightness(image.bgr, mask))
         metrics_dict.update(compute_smearing(image.bgr, image.alpha))
@@ -499,9 +529,12 @@ def process_image(
                     
         return sample_id, metrics, box_blurs
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Error fatal procesando %s", filepath)
-        return sample_id, None, None
+        return sample_id, QualityMetrics(
+            processing_error=True,
+            error_message=f"{type(exc).__name__}: {exc}",
+        ), None
 
 
 def flush_quality_batch(
@@ -555,7 +588,7 @@ def ensure_quality_schema(dataset: fo.Dataset) -> None:
 
 def bounded_parallel_map(
     executor: ThreadPoolExecutor,
-    tasks: Iterable[tuple[str, str, list[list[float]] | None]],
+    tasks: Iterable[tuple[str, str, list[list[float]] | None, int]],
     ocr_engine: OcrEngine,
     max_pending: int,
 ) -> Iterable[tuple[str, QualityMetrics | None, list[float] | None]]:
@@ -587,6 +620,7 @@ def compute_dataset_quality(
     ocr_confidence: float,
     max_pending: int | None = None,
     ocr_workers: int = 4,
+    min_valid_size: int = MIN_VALID_SIZE,
 ) -> None:
     """
     Orquestador principal.
@@ -613,12 +647,18 @@ def compute_dataset_quality(
     sample_ids = dataset.values("id")
     filepaths = dataset.values("filepath")
     
-    if dataset.has_sample_field("coco_detections"):
-        bboxes_list = dataset.values("coco_detections.detections.bounding_box")
+    if dataset.has_sample_field("ground_truth_detections"):
+        bboxes_list = dataset.values("ground_truth_detections.detections.bounding_box")
     else:
         bboxes_list = [None] * total_samples
         
-    tasks = zip(sample_ids, filepaths, bboxes_list)
+    tasks = zip(
+        sample_ids,
+        filepaths,
+        bboxes_list,
+        repeat(min_valid_size, total_samples),
+        strict=True,
+    )
 
     ocr_engine = OcrEngine(
         enabled=enable_ocr, 
@@ -670,9 +710,13 @@ def compute_dataset_quality(
             if len(batch_dict) >= BATCH_UPDATE_SIZE:
                 flush_quality_batch(dataset, batch_dict)
                 flush_flat_metric_batches(dataset, flat_batches)
-                if box_blur_batch and dataset.has_sample_field("coco_detections"):
-                    dataset.set_values("coco_detections.detections.blur_variance", box_blur_batch, key_field="id")
+                if box_blur_batch and dataset.has_sample_field("ground_truth_detections"):
+                    dataset.set_values("ground_truth_detections.detections.blur_variance", box_blur_batch, key_field="id")
                     box_blur_batch.clear()
+
+            if metrics.processing_error:
+                fatal_errors_count += 1
+                continue
 
             if metrics.is_corrupted:
                 corrupted_count += 1
@@ -699,8 +743,8 @@ def compute_dataset_quality(
 
     flush_quality_batch(dataset, batch_dict)
     flush_flat_metric_batches(dataset, flat_batches)
-    if box_blur_batch and dataset.has_sample_field("coco_detections"):
-        dataset.set_values("coco_detections.detections.blur_variance", box_blur_batch, key_field="id")
+    if box_blur_batch and dataset.has_sample_field("ground_truth_detections"):
+        dataset.set_values("ground_truth_detections.detections.blur_variance", box_blur_batch, key_field="id")
         box_blur_batch.clear()
 
     logger.info("Análisis finalizado y guardado en FiftyOne.")
@@ -713,7 +757,7 @@ def compute_dataset_quality(
     )
 
     if valid_count > 0:
-        logger.info("  Resolución inferior a %spx: %d", MIN_VALID_SIZE, low_res_count)
+        logger.info("  Resolución inferior a %spx: %d", min_valid_size, low_res_count)
         logger.info("  Posibles marcas de agua: %d", watermark_count)
         logger.info("  Posibles bordes estirados: %d", smearing_count)
         logger.info("  Blur medio (Laplaciano): %.2f", blur_sum / valid_count)
@@ -801,6 +845,7 @@ def main() -> None:
         default=4,
         help="Número máximo de procesos Tesseract simultáneos (por defecto: 4).",
     )
+    parser.add_argument("--min-resolution", type=int, default=MIN_VALID_SIZE)
     parser.add_argument(
         "--repair-schema-only",
         action="store_true",
@@ -819,6 +864,7 @@ def main() -> None:
         ocr_confidence=args.ocr_confidence,
         max_pending=args.max_pending,
         ocr_workers=args.ocr_workers,
+        min_valid_size=args.min_resolution,
     )
 
 

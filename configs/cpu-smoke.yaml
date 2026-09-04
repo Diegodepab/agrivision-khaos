@@ -1,0 +1,24 @@
+schema_version: "1.0"
+quality:
+  min_resolution: 64
+  ocr_enabled: false
+  ocr_confidence: 60.0
+  severe_blur: 15.0
+  review_blur: 25.0
+  min_brightness: 18.0
+  max_brightness: 245.0
+  dark_p95: 45.0
+  bright_p5: 210.0
+  min_box_blur: 150.0
+deduplication:
+  exact_enabled: true
+  semantic_enabled: false
+  augmentation_enabled: true
+  semantic_similarity: 0.90
+  augmentation_similarity: 0.92
+  semantic_action: review
+  augmentation_action: review
+splits:
+  train: 0.80
+  val: 0.10
+  test: 0.10

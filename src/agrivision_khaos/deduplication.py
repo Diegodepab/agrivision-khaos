@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import argparse
+import hashlib
 import logging
 import sys
 from itertools import chain
@@ -10,6 +13,7 @@ import numpy as np
 
 # Configuración de logging orientado a los datos
 from rich.logging import RichHandler
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -18,12 +22,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-import torch
+try:
+    import torch
+except ImportError:  # Core ingestion/quality installations do not need embeddings
+    torch = None
 
 # Modelo de extracción de características para la detección semántica.
-# Si hay GPU (CUDA), usamos ResNet50 para obtener máxima precisión en texturas.
-# Si solo hay CPU, caemos graciosamente a MobileNetV2, que es 10x más rápido.
-SIMILARITY_MODEL = "resnet50-imagenet-torch" if torch.cuda.is_available() else "mobilenet-v2-imagenet-torch"
+# Con GPU (CUDA) usamos ResNet50; en CPU, MobileNetV2 reduce el coste de inferencia.
+SIMILARITY_MODEL = (
+    "resnet50-imagenet-torch"
+    if torch is not None and torch.cuda.is_available()
+    else "mobilenet-v2-imagenet-torch"
+)
+
+
+def _require_embedding_backend() -> None:
+    if torch is None:
+        raise RuntimeError(
+            "La deduplicación semántica requiere PyTorch: instala el extra de CPU con "
+            "`uv sync --extra cpu` o el de NVIDIA CUDA 13.0 con `uv sync --extra cu130`."
+        )
 
 
 def load_dataset(dataset_name: str) -> fo.Dataset:
@@ -41,7 +59,8 @@ def _get_padding_ratio(filepath: str) -> float:
     """Calcula el porcentaje de píxeles que son puramente negros o blancos (padding artificial)."""
     try:
         img = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
-        if img is None: return 1.0
+        if img is None:
+            return 1.0
         padding_mask = (img <= 5) | (img >= 250)
         return float(np.mean(padding_mask))
     except Exception:
@@ -92,6 +111,8 @@ def _sample_keep_score(sample: fo.Sample) -> tuple[float, ...]:
     padding = _get_padding_ratio(sample.filepath)
 
     return (
+        0.0 if _curation_status(sample) == "removed" else 1.0,
+        0.0 if _curation_status(sample) == "review" else 1.0,
         0.0 if _flag(sample, "is_corrupted") else 1.0,
         0.0 if _flag(sample, "has_watermark") else 1.0,
         0.0 if _flag(sample, "has_smearing") else 1.0,
@@ -103,6 +124,54 @@ def _sample_keep_score(sample: fo.Sample) -> tuple[float, ...]:
     )
 
 
+def _curation_status(sample: fo.Sample) -> str:
+    curation = _sample_value(sample, "curation")
+    if curation is None:
+        return "kept"
+    if hasattr(curation, "get"):
+        return str(curation.get("status", "kept") or "kept")
+    return str(getattr(curation, "status", "kept") or "kept")
+
+
+def _label_signature(sample: fo.Sample) -> frozenset[str]:
+    labels = _sample_value(sample, "normalized_labels") or []
+    if labels:
+        return frozenset(str(label) for label in labels if label)
+    label = _sample_value(sample, "normalized_label")
+    return frozenset([str(label)]) if label else frozenset()
+
+
+def _connected_components(duplicates_dict: dict) -> list[list[str]]:
+    """Converts overlapping neighbor groups into deterministic components."""
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(left: str, right: str) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[max(left_root, right_root)] = min(left_root, right_root)
+
+    for representative, duplicates in duplicates_dict.items():
+        representative = str(representative)
+        find(representative)
+        for duplicate in duplicates:
+            union(representative, str(duplicate))
+
+    groups: dict[str, set[str]] = {}
+    for sample_id in parent:
+        groups.setdefault(find(sample_id), set()).add(sample_id)
+    return sorted(
+        (sorted(group) for group in groups.values() if len(group) > 1),
+        key=lambda group: group[0],
+    )
+
+
 def process_duplicates(dataset: fo.Dataset, duplicates_dict: dict, tag: str) -> tuple[int, list[tuple[str, str]]]:
     """
     Función de utilidad para consolidar el etiquetado de clústeres.
@@ -111,25 +180,30 @@ def process_duplicates(dataset: fo.Dataset, duplicates_dict: dict, tag: str) -> 
     Las demás son marcadas como redundantes.
     Devuelve la cantidad de redundantes y una lista de ejemplos (id_original, id_duplicado).
     """
+    conflict_tag = f"{tag}_label_conflict"
+    dataset.untag_samples([tag, conflict_tag])
     if not duplicates_dict:
         logger.info("Análisis completado: No se detectaron muestras redundantes.")
         return 0, []
 
-    final_redundant_ids = []
-    example_pairs = []
-    num_clusters = len(duplicates_dict)
+    components = _connected_components(duplicates_dict)
+    final_redundant_ids: set[str] = set()
+    duplicate_pairs: list[tuple[str, str]] = []
+    conflict_ids: set[str] = set()
+    num_clusters = len(components)
     
     logger.info("Analizando %d clústeres para proteger la imagen original...", num_clusters)
     
     # Pre-cargar muestras para escoger el mejor representante del cluster.
-    all_cluster_ids = list(duplicates_dict.keys()) + list(chain.from_iterable(duplicates_dict.values()))
+    all_cluster_ids = list(chain.from_iterable(components))
     samples_by_id = {
         sample.id: sample
         for sample in dataset.select(all_cluster_ids)
     }
     
-    for rep_id, dup_list in duplicates_dict.items():
-        cluster_ids = [rep_id] + dup_list
+    cluster_ids_by_sample: dict[str, str] = {}
+    representative_by_sample: dict[str, str] = {}
+    for cluster_ids in components:
         
         # Encontrar la imagen con mejor calidad global. El padding sigue siendo
         # importante, pero ya no domina sobre corrupcion, watermark o blur.
@@ -139,22 +213,39 @@ def process_duplicates(dataset: fo.Dataset, duplicates_dict: dict, tag: str) -> 
             if (sample := samples_by_id.get(s_id)) is not None
         ]
         best_id = max(scored_ids, key=lambda item: item[1])[0] if scored_ids else cluster_ids[0]
+        signatures = {
+            _label_signature(sample)
+            for sample_id in cluster_ids
+            if (sample := samples_by_id.get(sample_id)) is not None
+        }
+        has_label_conflict = len(signatures) > 1
                 
-        # Guardar algunos ejemplos para el reporte (hasta 10)
-        if len(example_pairs) < 10 and len(cluster_ids) > 1:
-            for s_id in cluster_ids:
-                if s_id != best_id:
-                    example_pairs.append((best_id, s_id))
-                    if len(example_pairs) >= 10:
-                        break
+        cluster_id = hashlib.sha1("\0".join(cluster_ids).encode("utf-8")).hexdigest()[:16]
+        for sample_id in cluster_ids:
+            cluster_ids_by_sample[sample_id] = cluster_id
+            representative_by_sample[sample_id] = best_id
+            if has_label_conflict:
+                conflict_ids.add(sample_id)
+            elif sample_id != best_id:
+                final_redundant_ids.add(sample_id)
+                duplicate_pairs.append((best_id, sample_id))
 
-        # Todas las que no sean la mejor, se van a la basura
-        final_redundant_ids.extend([s_id for s_id in cluster_ids if s_id != best_id])
+    schema = dataset.get_field_schema()
+    for field_name in ("duplicate_cluster_id", "duplicate_representative_id"):
+        if field_name not in schema:
+            dataset.add_sample_field(field_name, fo.StringField)
+    dataset.set_values("duplicate_cluster_id", cluster_ids_by_sample, key_field="id")
+    dataset.set_values("duplicate_representative_id", representative_by_sample, key_field="id")
+    if conflict_ids:
+        dataset.select(sorted(conflict_ids)).tag_samples(conflict_tag)
+        logger.warning(
+            "%d muestras duplicadas tienen etiquetas incompatibles y requieren revisión.",
+            len(conflict_ids),
+        )
     
     num_redundant = len(final_redundant_ids)
     if num_redundant > 0:
-        dataset.untag_samples(tag)
-        dataset.select(final_redundant_ids).tag_samples(tag)
+        dataset.select(sorted(final_redundant_ids)).tag_samples(tag)
         
         percentage = (num_redundant / len(dataset)) * 100
         logger.info(
@@ -162,7 +253,7 @@ def process_duplicates(dataset: fo.Dataset, duplicates_dict: dict, tag: str) -> 
             num_clusters, num_redundant, percentage, tag
         )
         
-    return num_redundant, example_pairs
+    return num_redundant, duplicate_pairs
 
 
 def detect_exact_duplicates(dataset: fo.Dataset, tag: str) -> tuple[int, list[tuple[str, str]]]:
@@ -174,8 +265,9 @@ def detect_exact_duplicates(dataset: fo.Dataset, tag: str) -> tuple[int, list[tu
 
 def _compute_similarity(dataset: fo.Dataset, brain_key: str) -> "fob.SimilarityIndex":
     """Wrapper centralizado para compute_similarity. Un único lugar para configurar modelo y parámetros."""
+    _require_embedding_backend()
     # Nota: FiftyOne lanzará un warning de "Model does not support batching" porque
-    # ResNet50 procesa las imágenes manteniendo su aspect ratio original (ragged_batches=True).
+    # El modelo activo procesa imágenes con tamaños distintos (ragged_batches=True).
     # Esto es vital para no distorsionar las texturas de las hojas.
     return fob.compute_similarity(
         dataset,
@@ -340,10 +432,11 @@ def inspect_augmentation_view(dataset: fo.Dataset, threshold: float) -> None:
 
 def detect_mislabeled_samples(dataset: fo.Dataset, tag: str = "review", threshold: float = 0.7) -> int:
     """
-    Detecta posibles errores de etiquetado (Outliers) en base a los embeddings de ResNet50.
+    Detecta posibles errores de etiquetado a partir de los embeddings activos.
     Aplica normalización L2 obligatoria antes de calcular centroides.
     """
     logger.info("Iniciando auditoría de etiquetado (Mislabeling Detection)...")
+    _require_embedding_backend()
     
     try:
         embeddings = dataset.compute_embeddings(model=SIMILARITY_MODEL)
@@ -359,7 +452,7 @@ def detect_mislabeled_samples(dataset: fo.Dataset, tag: str = "review", threshol
     labels = np.array(dataset.values("normalized_label"))
     sample_ids = np.array(dataset.values("id"))
     
-    unique_labels = np.unique([l for l in labels if l])
+    unique_labels = np.unique([label for label in labels if label])
     if len(unique_labels) < 2:
         logger.info("Se necesitan al menos 2 clases para comparar mislabeling.")
         return 0

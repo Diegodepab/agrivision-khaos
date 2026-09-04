@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import csv
 import hashlib
 import html
 import importlib.util
 import json
 import logging
+import math
+import os
 import re
 import shutil
-import sys
+import tempfile
 import unicodedata
-import yaml
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -21,8 +23,14 @@ from typing import Any
 
 import cv2
 import fiftyone as fo
-
+import yaml
+from pydantic import ValidationError
 from rich.logging import RichHandler
+
+from agrivision_khaos.dry_run import audit_raw_datasets
+from agrivision_khaos.execution import PipelineLock, RunCheckpoint, source_fingerprint
+from agrivision_khaos.models import CurationPolicy, QualityPolicy, SourceManifest
+from agrivision_khaos.preflight import run_preflight
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,10 +40,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 SPLIT_NAMES = {"train", "test", "valid", "val", "validation"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
+SOURCE_MANIFEST_NAMES = ("source.yaml", "source.yml", "source.json")
 HARD_CONFIDENCE = 0.98
+CANONICAL_SCHEMA_VERSION = "1.0"
+SOURCE_DETECTION_FIELDS = ("coco_detections", "yolo_detections", "voc_detections")
+SUPPORTED_OUTPUT_FORMATS = {"classification", "coco", "yolo", "datumaro", "fiftyone"}
 
 SAFE_LABEL_ALIASES = {
     "healthy": "healthy",
@@ -60,6 +71,7 @@ class Decision:
     confidence: float
     keep_reason: str = ""
     cluster_id: str = ""
+    representative_id: str = ""
 
 
 @dataclass
@@ -70,19 +82,6 @@ class PhaseResult:
     kept: int = 0
     notes: list[str] = field(default_factory=list)
     duplicate_pairs: list[tuple[str, str]] = field(default_factory=list)
-
-
-def load_symbol(relative_path: str, symbol_name: str) -> Any:
-    module_path = REPO_ROOT / relative_path
-    module_name = "agrivision_dynamic_" + hashlib.sha1(str(module_path).encode()).hexdigest()
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"No se pudo cargar {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return getattr(module, symbol_name)
 
 
 def optional_tool_status() -> dict[str, dict[str, str]]:
@@ -127,18 +126,34 @@ def discover_source_format(path: Path) -> str:
     return "classification_tree"
 
 
-def discover_sources(raw_dir: Path) -> list[dict[str, str]]:
+def discover_sources(raw_dir: Path) -> list[dict[str, Any]]:
     if not raw_dir.exists():
         return []
-    return [
-        {
-            "name": child.name,
+    sources = []
+    for child in sorted(raw_dir.iterdir()):
+        if not child.is_dir():
+            continue
+        metadata_path = next((child / name for name in SOURCE_MANIFEST_NAMES if (child / name).is_file()), None)
+        metadata = SourceManifest(name=child.name)
+        if metadata_path is not None:
+            try:
+                raw_metadata = (
+                    json.loads(metadata_path.read_text(encoding="utf-8"))
+                    if metadata_path.suffix == ".json"
+                    else yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
+                )
+                metadata = SourceManifest.model_validate(raw_metadata or {})
+            except (OSError, ValueError, ValidationError) as exc:
+                raise ValueError(f"Manifiesto de fuente inválido {metadata_path}: {exc}") from exc
+        sources.append({
             "path": str(child),
             "format": discover_source_format(child),
-        }
-        for child in sorted(raw_dir.iterdir())
-        if child.is_dir()
-    ]
+            "manifest_path": str(metadata_path) if metadata_path else "",
+            **metadata.model_dump(mode="json"),
+            "display_name": metadata.name or child.name,
+            "name": child.name,
+        })
+    return sources
 
 
 def ensure_pipeline_schema(dataset: fo.Dataset) -> None:
@@ -150,9 +165,26 @@ def ensure_pipeline_schema(dataset: fo.Dataset) -> None:
         "source_path",
         "source_label",
         "normalized_label",
+        "task_type",
+        "schema_version",
+        "source_version",
+        "source_license",
+        "source_url",
+        "source_citation",
+        "source_sensor",
+        "source_geography",
     ):
         if field_name not in schema:
             dataset.add_sample_field(field_name, fo.StringField)
+
+    for field_name in ("source_labels", "normalized_labels"):
+        if field_name not in schema:
+            dataset.add_sample_field(field_name, fo.ListField, subfield=fo.StringField)
+
+    if "annotation_issues" not in schema:
+        dataset.add_sample_field("annotation_issues", fo.ListField, subfield=fo.StringField)
+    if "annotation_valid" not in schema:
+        dataset.add_sample_field("annotation_valid", fo.BooleanField)
 
     if "curation" not in schema:
         dataset.add_sample_field(
@@ -163,6 +195,91 @@ def ensure_pipeline_schema(dataset: fo.Dataset) -> None:
 
     if "final_label" not in schema:
         dataset.add_sample_field("final_label", fo.EmbeddedDocumentField, embedded_doc_type=fo.Classification)
+
+    if "ground_truth_classification" not in schema:
+        dataset.add_sample_field(
+            "ground_truth_classification",
+            fo.EmbeddedDocumentField,
+            embedded_doc_type=fo.Classification,
+        )
+
+    if "ground_truth_detections" not in schema:
+        dataset.add_sample_field(
+            "ground_truth_detections",
+            fo.EmbeddedDocumentField,
+            embedded_doc_type=fo.Detections,
+        )
+
+
+def canonicalize_annotations(sample: fo.Sample) -> dict[str, object]:
+    """Copies source annotations into stable task-specific canonical fields."""
+    task_types: list[str] = []
+    source_labels: set[str] = set()
+    normalized_labels: set[str] = set()
+    annotation_issues: list[str] = []
+
+    classification = sample_field(sample, "original_label")
+    source_class = str(getattr(classification, "label", "") or "")
+    if source_class:
+        normalized_class = normalize_label(source_class)
+        canonical_class = fo.Classification(
+            label=normalized_class,
+            source_label=source_class,
+        )
+        sample["ground_truth_classification"] = canonical_class
+        sample["final_label"] = copy.deepcopy(canonical_class)
+        sample["source_label"] = source_class
+        sample["normalized_label"] = normalized_class
+        task_types.append("classification")
+        source_labels.add(source_class)
+        normalized_labels.add(normalized_class)
+
+    canonical_detections: list[fo.Detection] = []
+    for field_name in SOURCE_DETECTION_FIELDS:
+        detections = sample_field(sample, field_name)
+        for detection in getattr(detections, "detections", None) or []:
+            canonical = copy.deepcopy(detection)
+            source_label = str(getattr(canonical, "label", "") or "")
+            if not source_label:
+                continue
+            canonical["source_label"] = source_label
+            canonical.label = normalize_label(source_label)
+            canonical["source_field"] = field_name
+            bounding_box = list(getattr(canonical, "bounding_box", None) or [])
+            valid_box = (
+                len(bounding_box) == 4
+                and all(isinstance(value, (int, float)) and math.isfinite(value) for value in bounding_box)
+                and bounding_box[0] >= 0
+                and bounding_box[1] >= 0
+                and bounding_box[2] > 0
+                and bounding_box[3] > 0
+                and bounding_box[0] + bounding_box[2] <= 1.0 + 1e-9
+                and bounding_box[1] + bounding_box[3] <= 1.0 + 1e-9
+            )
+            if not valid_box:
+                issue = f"invalid_bbox:{field_name}:{len(canonical_detections)}"
+                canonical["validation_error"] = issue
+                annotation_issues.append(issue)
+            canonical_detections.append(canonical)
+            source_labels.add(source_label)
+            normalized_labels.add(canonical.label)
+
+    if canonical_detections:
+        sample["ground_truth_detections"] = fo.Detections(detections=canonical_detections)
+        task_types.append("detection")
+
+    sample["task_type"] = ",".join(task_types) if task_types else "unlabeled"
+    sample["schema_version"] = CANONICAL_SCHEMA_VERSION
+    sample["source_labels"] = sorted(source_labels)
+    sample["normalized_labels"] = sorted(normalized_labels)
+    sample["annotation_issues"] = annotation_issues
+    sample["annotation_valid"] = not annotation_issues
+    return {
+        "task_type": sample["task_type"],
+        "source_labels": sample["source_labels"],
+        "normalized_labels": sample["normalized_labels"],
+        "annotation_issues": annotation_issues,
+    }
 
 
 def infer_split(parts: tuple[str, ...]) -> str:
@@ -189,13 +306,6 @@ def extract_sample_label(sample: fo.Sample, raw_dir: Path) -> str:
         if label.lower() not in {"dataset", "data", "images", "img", "train", "test", "val", "valid"}:
             return label
 
-    for det_field in ["coco_detections", "yolo_detections", "voc_detections"]:
-        detections = sample_field(sample, det_field)
-        if detections is not None and getattr(detections, "detections", None):
-            labels = sorted({det.label for det in detections.detections if getattr(det, "label", None)})
-            if labels:
-                return ",".join(labels)
-
     try:
         parts = Path(sample.filepath).resolve().relative_to(raw_dir.resolve()).parts
     except ValueError:
@@ -203,7 +313,11 @@ def extract_sample_label(sample: fo.Sample, raw_dir: Path) -> str:
     return infer_label_from_path(parts)
 
 
-def infer_source_metadata(sample: fo.Sample, raw_dir: Path, source_formats: dict[str, str]) -> dict[str, str]:
+def infer_source_metadata(
+    sample: fo.Sample,
+    raw_dir: Path,
+    source_details: dict[str, dict[str, Any]],
+) -> dict[str, str]:
     try:
         relative = Path(sample.filepath).resolve().relative_to(raw_dir.resolve())
         parts = relative.parts
@@ -212,21 +326,29 @@ def infer_source_metadata(sample: fo.Sample, raw_dir: Path, source_formats: dict
         parts = relative.parts
 
     source_dataset = parts[0] if parts else "unknown"
-    source_label = extract_sample_label(sample, raw_dir)
+    details = source_details.get(source_dataset, {})
+    source_format = str(details.get("format", "unknown"))
+    source_label = extract_sample_label(sample, raw_dir) if source_format == "classification_tree" else ""
     return {
         "source_dataset": source_dataset,
         "source_split": infer_split(parts),
-        "source_format": source_formats.get(source_dataset, "unknown"),
+        "source_format": source_format,
         "source_path": str(relative),
         "source_label": source_label,
         "normalized_label": normalize_label(source_label),
+        "source_version": str(details.get("version", "unknown")),
+        "source_license": str(details.get("license", "unknown")),
+        "source_url": str(details.get("homepage", "") or ""),
+        "source_citation": str(details.get("citation", "") or ""),
+        "source_sensor": str(details.get("sensor", "RGB")),
+        "source_geography": str(details.get("geography", "") or ""),
     }
 
 
-def annotate_sources(dataset: fo.Dataset, raw_dir: Path, sources: list[dict[str, str]]) -> None:
+def annotate_sources(dataset: fo.Dataset, raw_dir: Path, sources: list[dict[str, Any]]) -> None:
     logger.info("Registrando procedencia y etiquetas normalizadas...")
     ensure_pipeline_schema(dataset)
-    source_formats = {source["name"]: source["format"] for source in sources}
+    source_details = {str(source["name"]): source for source in sources}
     initial_decision = fo.DynamicEmbeddedDocument(
         status="kept",
         phase="ingestion",
@@ -237,15 +359,19 @@ def annotate_sources(dataset: fo.Dataset, raw_dir: Path, sources: list[dict[str,
     )
 
     for sample in dataset.iter_samples(progress=True, autosave=True):
-        metadata = infer_source_metadata(sample, raw_dir, source_formats)
+        metadata = infer_source_metadata(sample, raw_dir, source_details)
         for field_name, value in metadata.items():
             sample[field_name] = value
+        canonicalize_annotations(sample)
         sample["curation"] = initial_decision
-        if metadata["normalized_label"]:
-            sample["final_label"] = fo.Classification(label=metadata["normalized_label"])
 
 
-def evaluate_quality(sample: fo.Sample) -> Decision:
+def evaluate_quality(sample: fo.Sample, policy: QualityPolicy | None = None) -> Decision:
+    policy = policy or QualityPolicy()
+    if flag(sample, "processing_error"):
+        return Decision("review", "quality", "Error de Procesamiento", 1.0)
+    if sample_field(sample, "annotation_valid", True) is False:
+        return Decision("review", "annotations", "Anotación Geométrica Inválida", 1.0)
     if flag(sample, "is_corrupted"):
         return Decision("removed", "quality", "Corrupta", 1.0)
     if flag(sample, "has_watermark"):
@@ -256,17 +382,21 @@ def evaluate_quality(sample: fo.Sample) -> Decision:
         return Decision("removed", "quality", "Bordes Estirados (Smearing)", 0.92)
 
     blur = metric(sample, "blur_variance")
-    if blur is not None and blur < 15.0:
+    if blur is not None and blur < policy.severe_blur:
         return Decision("removed", "quality", "Desenfoque Severo", 0.94)
-    if blur is not None and blur < 25.0:
+    if blur is not None and blur < policy.review_blur:
         return Decision("review", "quality", "Desenfoque Leve", 0.72)
 
     brightness = metric(sample, "brightness_mean")
     p5 = metric(sample, "brightness_p5")
     p95 = metric(sample, "brightness_p95")
-    if brightness is not None and (brightness < 18.0 or brightness > 245.0):
+    if brightness is not None and (
+        brightness < policy.min_brightness or brightness > policy.max_brightness
+    ):
         return Decision("removed", "quality", "Brillo Extremo", 0.90)
-    if (p95 is not None and p95 < 45.0) or (p5 is not None and p5 > 210.0):
+    if (p95 is not None and p95 < policy.dark_p95) or (
+        p5 is not None and p5 > policy.bright_p5
+    ):
         return Decision("review", "quality", "Brillo Anómalo", 0.70)
 
     return Decision("kept", "quality", "quality_passed", 1.0, keep_reason="quality_passed")
@@ -461,6 +591,7 @@ def write_reports(
     evidence: dict[str, object],
 ) -> None:
     write_json(report_dir / "summary.json", summary)
+    write_dataset_card(report_dir / "DATASET_CARD.md", summary)
     copy_examples_by_reason(list(evidence.get("removed_by_reason", [])), report_dir / "discarded_examples")
     copy_examples_by_reason(list(evidence.get("review_by_reason", [])), report_dir / "review_examples")
     copy_duplicate_pair_gallery(list(evidence.get("duplicate_phases", [])), report_dir / "duplicate_examples")
@@ -573,6 +704,60 @@ class_weights = {{<br>
     (report_dir / "report.html").write_text(html_doc, encoding="utf-8")
 
 
+def write_dataset_card(path: Path, summary: dict[str, Any]) -> None:
+    """Writes a portable dataset card with provenance and known limitations."""
+    counts = summary.get("counts", {})
+    sources = summary.get("sources", [])
+    unknown_licenses = [
+        str(source.get("name", "unknown"))
+        for source in sources
+        if str(source.get("license", "unknown")).lower() == "unknown"
+    ]
+    source_rows = [
+        "| Fuente | Versión | Licencia | Formato |",
+        "|---|---:|---|---|",
+    ]
+    source_rows.extend(
+        f"| {source.get('name', 'unknown')} | {source.get('version', 'unknown')} | "
+        f"{source.get('license', 'unknown')} | {source.get('format', 'unknown')} |"
+        for source in sources
+    )
+    limitations = [
+        "Los umbrales de calidad son heurísticos y deben calibrarse para cada dominio de captura.",
+        "Los casos en estado `review` no se incluyen en los exports de entrenamiento.",
+        "La similitud visual no demuestra identidad biológica de plantas o lesiones.",
+    ]
+    if unknown_licenses:
+        limitations.append(
+            "No publicar hasta resolver licencias desconocidas: " + ", ".join(unknown_licenses) + "."
+        )
+    card = "\n".join(
+        [
+            f"# Dataset Card: {summary.get('dataset', 'unknown')}",
+            "",
+            f"- Run: `{summary.get('run_id', 'unknown')}`",
+            f"- Generado: `{summary.get('created_at', 'unknown')}`",
+            f"- Muestras iniciales: {counts.get('initial', 0)}",
+            f"- Conservadas: {counts.get('kept', 0)}",
+            f"- Revisión pendiente: {counts.get('review', 0)}",
+            f"- Eliminadas: {counts.get('removed', 0)}",
+            "",
+            "## Fuentes",
+            "",
+            *source_rows,
+            "",
+            "## Limitaciones y uso responsable",
+            "",
+            *(f"- {limitation}" for limitation in limitations),
+            "",
+            "La configuración exacta está incluida en `curation_summary.json`.",
+            "",
+        ]
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(card, encoding="utf-8")
+
+
 def current_status(sample: fo.Sample) -> str:
     curation = sample_field(sample, "curation")
     return str(getattr(curation, "status", "kept") or "kept")
@@ -646,7 +831,11 @@ def write_decisions(dataset: fo.Dataset, decisions: dict[str, Decision], tag_pre
     for sample in dataset.select(list(decisions)).iter_samples(progress=True, autosave=True):
         decision = decisions[sample.id]
         sample["curation"] = fo.DynamicEmbeddedDocument(**asdict(decision))
-        sample.tags = sorted(set(sample.tags + [f"curation_{decision.status}", f"{tag_prefix}_{decision.reason}"]))
+        state_tags = {"curation_kept", "curation_review", "curation_removed"}
+        retained_tags = [tag for tag in sample.tags if tag not in state_tags]
+        sample.tags = sorted(
+            set(retained_tags + [f"curation_{decision.status}", f"{tag_prefix}_{decision.reason}"])
+        )
         result.removed += int(decision.status == "removed")
         result.review += int(decision.status == "review")
         result.kept += int(decision.status == "kept")
@@ -658,27 +847,60 @@ def run_quality_phase(
     dataset: fo.Dataset,
     max_phase_drop: float,
     max_total_drop: float,
+    policy: QualityPolicy | None = None,
 ) -> PhaseResult:
     active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
-    decisions = {sample.id: evaluate_quality(sample) for sample in active_samples}
-    notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
+    decisions = {sample.id: evaluate_quality(sample, policy) for sample in active_samples}
+    notes = apply_second_opinion(list(dataset), decisions, max_phase_drop, max_total_drop)
     result = write_decisions(dataset, decisions, "quality")
     result.notes.extend(notes)
     return result
 
 
-def decision_for_tagged_duplicates(dataset: fo.Dataset, tag: str, phase: str, reason_text: str) -> dict[str, Decision]:
+def decision_for_tagged_duplicates(
+    dataset: fo.Dataset,
+    tag: str,
+    phase: str,
+    reason_text: str,
+    status: str = "removed",
+    confidence: float = 1.0,
+) -> dict[str, Decision]:
     decisions = {}
     for sample in dataset.match_tags(tag):
         if current_status(sample) == "removed":
             continue
+        representative_id = str(sample_field(sample, "duplicate_representative_id", "") or "")
         decisions[sample.id] = Decision(
-            status="removed",
+            status=status,
             phase=phase,
             reason=reason_text,
+            confidence=confidence,
+            keep_reason=(
+                f"duplicate_of:{representative_id}"
+                if status == "removed" and representative_id
+                else "potential_duplicate_requires_human_review"
+            ),
+            cluster_id=str(sample_field(sample, "duplicate_cluster_id", "") or ""),
+            representative_id=representative_id,
+        )
+    return decisions
+
+
+def decisions_for_label_conflicts(dataset: fo.Dataset, tag: str, phase: str) -> dict[str, Decision]:
+    decisions = {}
+    for sample in dataset.match_tags(f"{tag}_label_conflict"):
+        if current_status(sample) == "removed":
+            continue
+        decisions[sample.id] = Decision(
+            status="review",
+            phase=phase,
+            reason="Conflicto de Etiquetas entre Duplicados",
             confidence=1.0,
-            keep_reason="redundant_visual_cluster",
-            cluster_id="",
+            keep_reason="annotation_conflict_requires_human_review",
+            cluster_id=str(sample_field(sample, "duplicate_cluster_id", "") or ""),
+            representative_id=str(
+                sample_field(sample, "duplicate_representative_id", "") or ""
+            ),
         )
     return decisions
 
@@ -689,50 +911,109 @@ def run_duplicate_phases(
     work_dir: Path,
     max_phase_drop: float,
     max_total_drop: float,
+    policy: CurationPolicy | None = None,
 ) -> list[PhaseResult]:
-    detect_exact_duplicates = load_symbol("src/02_curation/deduplicate_dataset.py", "detect_exact_duplicates")
-    detect_semantic_duplicates = load_symbol("src/02_curation/deduplicate_dataset.py", "detect_semantic_duplicates")
-    detect_augmentation_duplicates = load_symbol("src/02_curation/deduplicate_dataset.py", "detect_augmentation_duplicates")
+    from agrivision_khaos.deduplication import (
+        detect_augmentation_duplicates,
+        detect_exact_duplicates,
+        detect_semantic_duplicates,
+    )
+
+    policy = policy or CurationPolicy()
 
     results = []
-    logger.info("Detectando duplicados exactos con FiftyOne...")
-    _, pairs = detect_exact_duplicates(dataset, "redundant_exact")
-    decisions = decision_for_tagged_duplicates(dataset, "redundant_exact", "exact_duplicates", "Redundante (Exacta)")
-    active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
-    notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
-    exact_result = write_decisions(dataset, decisions, "exact_duplicates")
-    exact_result.notes.extend(notes)
-    exact_result.duplicate_pairs = pairs
-    results.append(exact_result)
+    if policy.deduplication.exact_enabled:
+        logger.info("Detectando duplicados exactos con FiftyOne...")
+        _, pairs = detect_exact_duplicates(dataset, "redundant_exact")
+        decisions = decision_for_tagged_duplicates(dataset, "redundant_exact", "exact_duplicates", "Redundante (Exacta)")
+        decisions.update(decisions_for_label_conflicts(dataset, "redundant_exact", "exact_duplicates"))
+        notes = apply_second_opinion(list(dataset), decisions, max_phase_drop, max_total_drop)
+        exact_result = write_decisions(dataset, decisions, "exact_duplicates")
+        exact_result.notes.extend(notes)
+        exact_result.duplicate_pairs = pairs
+        results.append(exact_result)
+    else:
+        results.append(PhaseResult(name="exact_duplicates", notes=["Desactivada por política."]))
 
-    logger.info("Detectando near-duplicates semanticos con FiftyOne...")
-    try:
-        # Bajamos el umbral a 0.90 para atrapar hojas rotadas y reescaladas donde la red neuronal cambia ligeramente el embedding.
-        _, pairs = detect_semantic_duplicates(dataset, "redundant_semantic", threshold=0.90)
-        decisions = decision_for_tagged_duplicates(dataset, "redundant_semantic", "semantic_duplicates", "Redundante (Semántica)")
-        active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
-        notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
-        semantic_result = write_decisions(dataset, decisions, "semantic_duplicates")
-        semantic_result.notes.extend(notes)
-        semantic_result.duplicate_pairs = pairs
-        results.append(semantic_result)
-    except Exception as exc:
-        results.append(PhaseResult(name="semantic_duplicates", notes=[f"Fase omitida por error: {exc}"]))
+    if policy.deduplication.semantic_enabled:
+        logger.info("Detectando near-duplicates semanticos con FiftyOne...")
+        try:
+            _, pairs = detect_semantic_duplicates(
+                dataset,
+                "redundant_semantic",
+                threshold=policy.deduplication.semantic_similarity,
+            )
+            decisions = decision_for_tagged_duplicates(
+                dataset,
+                "redundant_semantic",
+                "semantic_duplicates",
+                "Redundante (Semántica)",
+                status=policy.deduplication.semantic_action,
+                confidence=(
+                    0.99 if policy.deduplication.semantic_action == "remove" else 0.85
+                ),
+            )
+            decisions.update(
+                decisions_for_label_conflicts(
+                    dataset, "redundant_semantic", "semantic_duplicates"
+                )
+            )
+            notes = apply_second_opinion(
+                list(dataset), decisions, max_phase_drop, max_total_drop
+            )
+            semantic_result = write_decisions(
+                dataset, decisions, "semantic_duplicates"
+            )
+            semantic_result.notes.extend(notes)
+            semantic_result.duplicate_pairs = pairs
+            results.append(semantic_result)
+        except Exception as exc:
+            raise RuntimeError(
+                "La deduplicación semántica estaba habilitada y falló; "
+                "se cancela la publicación del dataset"
+            ) from exc
+    else:
+        results.append(PhaseResult(name="semantic_duplicates", notes=["Desactivada por política."]))
 
-    logger.info("Detectando aumentaciones por huella de color...")
-    try:
-        # Bajamos el umbral a 0.92. Al rotar una imagen con fondo blanco, se generan 
-        # esquinas negras (padding) que alteran drásticamente el histograma de color general.
-        _, pairs = detect_augmentation_duplicates(dataset, "redundant_augmented", threshold=0.92)
-        decisions = decision_for_tagged_duplicates(dataset, "redundant_augmented", "augmentation_duplicates", "Redundante (Aumentación)")
-        active_samples = [sample for sample in dataset if current_status(sample) != "removed"]
-        notes = apply_second_opinion(active_samples, decisions, max_phase_drop, max_total_drop)
-        augmented_result = write_decisions(dataset, decisions, "augmentation_duplicates")
-        augmented_result.notes.extend(notes)
-        augmented_result.duplicate_pairs = pairs
-        results.append(augmented_result)
-    except Exception as exc:
-        results.append(PhaseResult(name="augmentation_duplicates", notes=[f"Fase omitida por error: {exc}"]))
+    if policy.deduplication.augmentation_enabled:
+        logger.info("Detectando aumentaciones por huella de color...")
+        try:
+            _, pairs = detect_augmentation_duplicates(
+                dataset,
+                "redundant_augmented",
+                threshold=policy.deduplication.augmentation_similarity,
+            )
+            decisions = decision_for_tagged_duplicates(
+                dataset,
+                "redundant_augmented",
+                "augmentation_duplicates",
+                "Redundante (Aumentación)",
+                status=policy.deduplication.augmentation_action,
+                confidence=(
+                    0.99 if policy.deduplication.augmentation_action == "remove" else 0.75
+                ),
+            )
+            decisions.update(
+                decisions_for_label_conflicts(
+                    dataset, "redundant_augmented", "augmentation_duplicates"
+                )
+            )
+            notes = apply_second_opinion(
+                list(dataset), decisions, max_phase_drop, max_total_drop
+            )
+            augmented_result = write_decisions(
+                dataset, decisions, "augmentation_duplicates"
+            )
+            augmented_result.notes.extend(notes)
+            augmented_result.duplicate_pairs = pairs
+            results.append(augmented_result)
+        except Exception as exc:
+            raise RuntimeError(
+                "La detección de aumentaciones estaba habilitada y falló; "
+                "se cancela la publicación del dataset"
+            ) from exc
+    else:
+        results.append(PhaseResult(name="augmentation_duplicates", notes=["Desactivada por política."]))
 
     return results
 
@@ -762,29 +1043,69 @@ def suggest_label_mappings(labels: list[str]) -> dict[str, Any]:
     return {"automatic": automatic, "candidates": candidates}
 
 
+def load_ontology_mapping(path: str | Path) -> dict[str, str]:
+    ontology_path = Path(path)
+    if not ontology_path.is_file():
+        raise ValueError(f"No existe el archivo de ontología: {ontology_path}")
+    try:
+        payload = yaml.safe_load(ontology_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"Ontología YAML inválida {ontology_path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("La ontología debe ser un mapa canonical_label: [source_labels]")
+
+    mapping: dict[str, str] = {}
+    for target, originals in payload.items():
+        canonical = normalize_label(str(target))
+        if not canonical or not isinstance(originals, list) or not originals:
+            raise ValueError(
+                f"Entrada de ontología inválida para {target!r}: se esperaba una lista no vacía"
+            )
+        for original in originals:
+            if not isinstance(original, str) or not original.strip():
+                raise ValueError(f"Etiqueta de origen inválida bajo {target!r}: {original!r}")
+            previous = mapping.get(original)
+            if previous is not None and previous != canonical:
+                raise ValueError(
+                    f"La etiqueta {original!r} se asigna a dos clases: "
+                    f"{previous!r} y {canonical!r}"
+                )
+            mapping[original] = canonical
+    return mapping
+
+
 def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str, ontology_map: str | None, report_dir: Path) -> tuple[PhaseResult, dict[str, Any]]:
-    labels = [label for label in dataset.values("source_label") if label]
+    if cleanlab_mode == "on":
+        if importlib.util.find_spec("cleanlab") is None:
+            raise RuntimeError("--cleanlab-mode on requiere instalar Cleanlab")
+        raise RuntimeError(
+            "--cleanlab-mode on requiere predicciones out-of-sample, que este pipeline "
+            "todavía no recibe; usa auto u off"
+        )
+
+    labels = sorted(
+        {
+            label
+            for sample_labels in dataset.values("source_labels")
+            for label in (sample_labels or [])
+            if label
+        }
+    )
     mapping = suggest_label_mappings(labels)
     result = PhaseResult(name="labels")
     
     automatic_map = {}
-    if ontology_map and Path(ontology_map).exists():
-        with open(ontology_map, "r", encoding="utf-8") as f:
-            user_ontology = yaml.safe_load(f) or {}
-            
-        # Invert yaml structure for processing
-        for normalized, originals in user_ontology.items():
-            if isinstance(originals, list):
-                for orig in originals:
-                    automatic_map[orig] = normalized
+    if ontology_map:
+        automatic_map = load_ontology_mapping(ontology_map)
         result.notes.append(f"Ontología de usuario aplicada desde {ontology_map}.")
         
     else:
         # Generar proposed ontology
         proposed = {norm: origs for norm, origs in mapping["automatic"].items()}
         for label in set(labels):
-            if label not in automatic_map:
-                proposed.setdefault(label, []).append(label)
+            bucket = proposed.setdefault(normalize_label(label), [])
+            if label not in bucket:
+                bucket.append(label)
                 
         proposed_path = report_dir / "proposed_ontology.yaml"
         with open(proposed_path, "w", encoding="utf-8") as f:
@@ -797,14 +1118,40 @@ def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str, ontology_map: str |
             for original in original_list:
                 automatic_map[original] = normalized
 
+    mapping["applied"] = dict(sorted(automatic_map.items()))
+
     if not dataset.has_sample_field("normalized_label"):
         dataset.add_sample_field("normalized_label", fo.StringField)
 
-    for sample in dataset:
-        original = sample.get_field("source_label")
+    for sample in dataset.iter_samples(autosave=True):
+        normalized_labels: set[str] = set()
+        original = sample_field(sample, "source_label")
         if original:
-            sample["normalized_label"] = automatic_map.get(original, original)
-            sample.save()
+            normalized = automatic_map.get(original, normalize_label(original))
+            sample["normalized_label"] = normalized
+            normalized_labels.add(normalized)
+            canonical_class = sample_field(sample, "ground_truth_classification")
+            if canonical_class is not None:
+                canonical_class.label = normalized
+                sample["ground_truth_classification"] = canonical_class
+                sample["final_label"] = copy.deepcopy(canonical_class)
+
+        detections = sample_field(sample, "ground_truth_detections")
+        for detection in getattr(detections, "detections", None) or []:
+            try:
+                source_label_value = detection.get_field("source_label")
+            except Exception:
+                source_label_value = getattr(detection, "source_label", None)
+            source_label = str(
+                source_label_value or getattr(detection, "label", "") or ""
+            )
+            if not source_label:
+                continue
+            detection.label = automatic_map.get(source_label, normalize_label(source_label))
+            normalized_labels.add(detection.label)
+        if detections is not None:
+            sample["ground_truth_detections"] = detections
+        sample["normalized_labels"] = sorted(normalized_labels)
 
     if cleanlab_mode == "off":
         result.notes.append("Cleanlab desactivado.")
@@ -916,6 +1263,7 @@ def sample_curation_payload(sample: fo.Sample) -> dict[str, object]:
         "confidence": getattr(curation, "confidence", None),
         "keep_reason": str(getattr(curation, "keep_reason", "")),
         "cluster_id": str(getattr(curation, "cluster_id", "")),
+        "representative_id": str(getattr(curation, "representative_id", "")),
         "blur_variance": metric(sample, "blur_variance"),
         "brightness_mean": metric(sample, "brightness_mean"),
         "brightness_p5": metric(sample, "brightness_p5"),
@@ -925,6 +1273,9 @@ def sample_curation_payload(sample: fo.Sample) -> dict[str, object]:
         "low_resolution": flag(sample, "low_resolution"),
         "has_watermark": flag(sample, "has_watermark"),
         "has_smearing": flag(sample, "has_smearing"),
+        "processing_error": flag(sample, "processing_error"),
+        "error_message": str(sample_field(sample, "error_message", "") or ""),
+        "asset_sha256": str(sample_field(sample, "asset_sha256", "") or ""),
     }
 
 
@@ -1067,38 +1418,116 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def partition_dataset(dataset: fo.Dataset, train_p: float = 0.8, val_p: float = 0.1, test_p: float = 0.1) -> None:
-    """
-    Partición estratificada sin fugas (Zero-Leak Splitting).
-    Agrupa por `video_id`, `location` o la carpeta padre (proxy para ráfagas de fotos).
-    """
-    logger.info("Generando partición Zero-Leak (Train/Val/Test)...")
-    import hashlib
-    
-    # Limpiar tags anteriores
+def _split_group_key(sample: fo.Sample) -> str:
+    for field_name in ("duplicate_cluster_id", "capture_group", "video_id", "location"):
+        value = sample_field(sample, field_name)
+        if value:
+            return f"{field_name}:{value}"
+    return f"asset:{sample.id}"
+
+
+def _split_labels(sample: fo.Sample) -> list[str]:
+    labels = list(sample_field(sample, "normalized_labels", []) or [])
+    return sorted(set(labels)) or ["__unlabeled__"]
+
+
+def allocate_group_splits(
+    groups: dict[str, list[str]],
+    proportions: dict[str, float],
+    sizes: dict[str, int] | None = None,
+) -> dict[str, str]:
+    """Greedily minimizes global class and size error without breaking groups."""
+    if set(proportions) != {"train", "val", "test"}:
+        raise ValueError("Las proporciones deben definir train, val y test")
+    if any(value < 0 for value in proportions.values()) or abs(sum(proportions.values()) - 1.0) > 1e-9:
+        raise ValueError("Las proporciones de split deben ser no negativas y sumar 1")
+
+    group_counts = {group: Counter(labels) for group, labels in groups.items()}
+    group_sizes = sizes or {group: max(sum(counts.values()), 1) for group, counts in group_counts.items()}
+    if set(group_sizes) != set(groups) or any(size < 1 for size in group_sizes.values()):
+        raise ValueError("Cada grupo debe tener un tamaño positivo")
+    total_size = sum(group_sizes.values())
+    label_totals = Counter(label for labels in groups.values() for label in labels)
+    target_sizes = {split: total_size * proportion for split, proportion in proportions.items()}
+    target_labels = {
+        split: {label: total * proportions[split] for label, total in label_totals.items()}
+        for split in proportions
+    }
+    current_sizes = Counter()
+    current_labels = {split: Counter() for split in proportions}
+
+    def global_error(candidate_group: str, candidate_split: str) -> float:
+        error = 0.0
+        for split in proportions:
+            size = current_sizes[split]
+            if split == candidate_split:
+                size += group_sizes[candidate_group]
+            error += ((size - target_sizes[split]) ** 2) / max(target_sizes[split], 1.0)
+            for label, target in target_labels[split].items():
+                count = current_labels[split][label]
+                if split == candidate_split:
+                    count += group_counts[candidate_group][label]
+                error += ((count - target) ** 2) / max(target, 1.0)
+        return error
+
+    rarity = {
+        group: min(label_totals[label] for label in counts) if counts else total_size
+        for group, counts in group_counts.items()
+    }
+    ordered_groups = sorted(
+        groups,
+        key=lambda group: (
+            rarity[group],
+            -group_sizes[group],
+            hashlib.sha256(group.encode("utf-8")).hexdigest(),
+        ),
+    )
+    assignments: dict[str, str] = {}
+    for group in ordered_groups:
+        split = min(
+            proportions,
+            key=lambda name: (
+                global_error(group, name),
+                hashlib.sha256(f"{group}:{name}".encode("utf-8")).hexdigest(),
+            ),
+        )
+        assignments[group] = split
+        current_sizes[split] += group_sizes[group]
+        current_labels[split].update(group_counts[group])
+    return assignments
+
+
+def partition_dataset(
+    dataset: fo.Dataset,
+    train_p: float = 0.8,
+    val_p: float = 0.1,
+    test_p: float = 0.1,
+) -> dict[str, int]:
+    """Creates deterministic group-aware and approximately stratified splits."""
+    logger.info("Generando partición estratificada por grupos (Train/Val/Test)...")
     dataset.untag_samples(["train", "val", "test"])
-    
-    for sample in dataset.iter_samples(autosave=True):
-        # Determinar el grupo (Granularidad menor que el dataset entero)
-        group_key = ""
-        if sample.has_field("video_id") and sample.video_id:
-            group_key = str(sample.video_id)
-        elif sample.has_field("location") and sample.location:
-            group_key = str(sample.location)
-        else:
-            # Fallback a la carpeta origen (suele contener ráfagas de la misma toma)
-            group_key = str(Path(sample.filepath).parent)
-            
-        # Hash estable para asegurar que el grupo caiga siempre en el mismo split
-        hash_val = int(hashlib.md5(group_key.encode('utf-8')).hexdigest(), 16)
-        normalized_hash = (hash_val % 10000) / 10000.0
-        
-        if normalized_hash < train_p:
-            sample.tags.append("train")
-        elif normalized_hash < train_p + val_p:
-            sample.tags.append("val")
-        else:
-            sample.tags.append("test")
+    eligible = [sample for sample in dataset if current_status(sample) == "kept"]
+    samples_by_group: dict[str, list[fo.Sample]] = defaultdict(list)
+    labels_by_group: dict[str, list[str]] = defaultdict(list)
+    for sample in eligible:
+        group = _split_group_key(sample)
+        samples_by_group[group].append(sample)
+        labels_by_group[group].extend(_split_labels(sample))
+
+    assignments = allocate_group_splits(
+        dict(labels_by_group),
+        {"train": train_p, "val": val_p, "test": test_p},
+        sizes={group: len(samples) for group, samples in samples_by_group.items()},
+    )
+    sample_assignments = {
+        sample.id: assignments[group]
+        for group, samples in samples_by_group.items()
+        for sample in samples
+    }
+    for sample in dataset.select(list(sample_assignments)).iter_samples(autosave=True):
+        split = sample_assignments[sample.id]
+        sample.tags = sorted(set(sample.tags + [split]))
+    return dict(Counter(sample_assignments.values()))
 
 def export_clean_dataset(
     dataset: fo.Dataset,
@@ -1106,25 +1535,46 @@ def export_clean_dataset(
     output_formats: list[str],
     label_mapping: dict[str, Any],
     summary: dict[str, Any],
+    policy: CurationPolicy | None = None,
 ) -> dict[str, str]:
+    policy = policy or CurationPolicy()
+    unknown_formats = sorted(set(output_formats) - SUPPORTED_OUTPUT_FORMATS)
+    if not output_formats or unknown_formats:
+        raise ValueError(
+            "Formatos de salida inválidos: "
+            + (", ".join(unknown_formats) if unknown_formats else "lista vacía")
+        )
     export_dir.mkdir(parents=True, exist_ok=True)
     images_dir = export_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     
     # Aplicar partición zero-leak
-    partition_dataset(dataset)
+    split_counts = partition_dataset(
+        dataset,
+        train_p=policy.splits.train,
+        val_p=policy.splits.val,
+        test_p=policy.splits.test,
+    )
+    summary["splits"] = split_counts
     
-    # Filtrar cajas delimitadoras borrosas a nivel de Crop (Blur Variance < 150)
-    # Conservamos la imagen original, pero eliminamos las anotaciones inservibles.
-    if dataset.has_sample_field("coco_detections"):
-        logger.info("Filtrando bounding boxes borrosos (blur_variance < 150)...")
-        dataset.filter_labels(
-            "coco_detections",
-            fo.ViewField("blur_variance") >= 150.0,
-            only_matches=True
-        )
-
     clean_view = dataset.match(fo.ViewField("curation.status") == "kept")
+    if not len(clean_view):
+        raise RuntimeError("No quedan muestras aprobadas; no se publicará un dataset vacío")
+
+    # Filtrar cajas delimitadoras borrosas en la vista exportada, sin mutar el snapshot.
+    has_detections = bool(
+        clean_view.count_values("ground_truth_detections.detections.label")
+    )
+    if has_detections:
+        logger.info(
+            "Filtrando bounding boxes con blur_variance < %.2f...",
+            policy.quality.min_box_blur,
+        )
+        clean_view = clean_view.filter_labels(
+            "ground_truth_detections",
+            fo.ViewField("blur_variance") >= policy.quality.min_box_blur,
+            only_matches=False,
+        )
     exports: dict[str, str] = {}
 
     manifest_rows = []
@@ -1145,6 +1595,11 @@ def export_clean_dataset(
                 "assigned_split": "train" if "train" in sample.tags else ("val" if "val" in sample.tags else "test"),
                 "source_label": str(sample_field(sample, "source_label", "")),
                 "normalized_label": str(sample_field(sample, "normalized_label", "")),
+                "task_type": str(sample_field(sample, "task_type", "unlabeled")),
+                "normalized_labels": ",".join(sample_field(sample, "normalized_labels", []) or []),
+                "asset_sha256": str(sample_field(sample, "asset_sha256", "") or ""),
+                "source_version": str(sample_field(sample, "source_version", "unknown")),
+                "source_license": str(sample_field(sample, "source_license", "unknown")),
             }
         )
 
@@ -1165,7 +1620,7 @@ def export_clean_dataset(
         clean_view.export(
             export_dir=str(export_dir / "fiftyone"),
             dataset_type=fo.types.FiftyOneDataset,
-            export_media="copy",
+            export_media=True,
         )
         exports["fiftyone"] = str(export_dir / "fiftyone")
     except Exception as exc:
@@ -1178,9 +1633,11 @@ def export_clean_dataset(
             import os
 
             for row in manifest_rows:
-                label = row["normalized_label"] or "unlabeled"
-                label_dir = class_dir / label
-                label_dir.mkdir(exist_ok=True)
+                if "classification" not in row["task_type"].split(","):
+                    continue
+                label = slugify(row["normalized_label"] or "unlabeled")
+                label_dir = class_dir / row["assigned_split"] / label
+                label_dir.mkdir(parents=True, exist_ok=True)
                 target_path = label_dir / Path(row["filepath"]).name
                 if not target_path.exists():
                     try:
@@ -1191,26 +1648,39 @@ def export_clean_dataset(
         except Exception as exc:
             exports["classification_error"] = str(exc)
 
-    if "coco" in output_formats and dataset.has_sample_field("coco_detections"):
+    if "coco" in output_formats and dataset.has_sample_field("ground_truth_detections"):
         try:
-            clean_view.export(
-                export_dir=str(export_dir / "coco"),
-                dataset_type=fo.types.COCODetectionDataset,
-                label_field="coco_detections",
-                export_media="copy",
-            )
+            detection_view = clean_view.exists("ground_truth_detections")
+            for split in ("train", "val", "test"):
+                split_view = detection_view.match_tags(split)
+                if not len(split_view):
+                    continue
+                split_view.export(
+                    export_dir=str(export_dir / "coco" / split),
+                    dataset_type=fo.types.COCODetectionDataset,
+                    label_field="ground_truth_detections",
+                    export_media=True,
+                )
             exports["coco"] = str(export_dir / "coco")
         except Exception as exc:
             exports["coco_error"] = str(exc)
 
-    if "yolo" in output_formats and dataset.has_sample_field("coco_detections") and hasattr(fo.types, "YOLOv5Dataset"):
+    if "yolo" in output_formats and dataset.has_sample_field("ground_truth_detections") and hasattr(fo.types, "YOLOv5Dataset"):
         try:
-            clean_view.export(
-                export_dir=str(export_dir / "yolo"),
-                dataset_type=fo.types.YOLOv5Dataset,
-                label_field="coco_detections",
-                export_media="copy",
-            )
+            detection_view = clean_view.exists("ground_truth_detections")
+            classes = sorted(detection_view.distinct("ground_truth_detections.detections.label"))
+            for split in ("train", "val", "test"):
+                split_view = detection_view.match_tags(split)
+                if not len(split_view):
+                    continue
+                split_view.export(
+                    export_dir=str(export_dir / "yolo" / split),
+                    dataset_type=fo.types.YOLOv5Dataset,
+                    label_field="ground_truth_detections",
+                    export_media=True,
+                    split=split,
+                    classes=classes,
+                )
             exports["yolo"] = str(export_dir / "yolo")
         except Exception as exc:
             exports["yolo_error"] = str(exc)
@@ -1224,7 +1694,7 @@ def export_clean_dataset(
                 clean_view.export(
                     export_dir=str(export_dir / "datumaro"),
                     dataset_type=datumaro_type,
-                    export_media="copy",
+                    export_media=True,
                 )
                 exports["datumaro"] = str(export_dir / "datumaro")
             except Exception as exc:
@@ -1258,13 +1728,20 @@ def build_summary(
     dataset_name: str,
     run_id: str,
     raw_dir: Path,
-    sources: list[dict[str, str]],
+    sources: list[dict[str, Any]],
     tools: dict[str, dict[str, str]],
     phases: list[PhaseResult],
     label_mapping: dict[str, Any],
 ) -> dict[str, Any]:
     counts = status_counts(dataset)
     class_weights = compute_class_weights(dataset)
+    phase_payloads = []
+    for phase in phases:
+        payload = asdict(phase)
+        pairs = payload.pop("duplicate_pairs", [])
+        payload["duplicate_pair_count"] = len(pairs)
+        phase_payloads.append(payload)
+
     return {
         "dataset": dataset_name,
         "run_id": run_id,
@@ -1278,14 +1755,14 @@ def build_summary(
         },
         "sources": sources,
         "tools": tools,
-        "phases": [asdict(phase) for phase in phases],
+        "phases": phase_payloads,
         "groups": grouped_counts(dataset),
         "label_mapping": label_mapping,
         "class_weights": class_weights,
     }
 
 
-def stage_datumaro_inventory(interim_dir: Path, sources: list[dict[str, str]], tools: dict[str, dict[str, str]]) -> None:
+def stage_datumaro_inventory(interim_dir: Path, sources: list[dict[str, Any]], tools: dict[str, dict[str, str]]) -> None:
     datumaro_dir = interim_dir / "datumaro"
     datumaro_dir.mkdir(parents=True, exist_ok=True)
     write_json(
@@ -1303,7 +1780,259 @@ def stage_datumaro_inventory(interim_dir: Path, sources: list[dict[str, str]], t
 
 
 def parse_output_formats(value: str) -> list[str]:
-    return [part.strip().lower() for part in value.split(",") if part.strip()]
+    formats = [part.strip().lower() for part in value.split(",") if part.strip()]
+    unknown = sorted(set(formats) - SUPPORTED_OUTPUT_FORMATS)
+    if not formats or unknown:
+        raise ValueError(
+            "Formatos de salida inválidos: "
+            + (", ".join(unknown) if unknown else "lista vacía")
+            + f". Permitidos: {', '.join(sorted(SUPPORTED_OUTPUT_FORMATS))}"
+        )
+    return formats
+
+
+def load_policy(path: str | Path) -> CurationPolicy:
+    policy_path = Path(path)
+    try:
+        payload = yaml.safe_load(policy_path.read_text(encoding="utf-8")) or {}
+        return CurationPolicy.model_validate(payload)
+    except (OSError, ValueError, ValidationError) as exc:
+        raise ValueError(f"Política de curación inválida {policy_path}: {exc}") from exc
+
+
+def _restore_phase(payload: dict[str, Any]) -> PhaseResult:
+    return PhaseResult(**payload)
+
+
+def _execute_pipeline(
+    args: argparse.Namespace,
+    policy: CurationPolicy,
+    raw_dir: Path,
+    dataset_name: str,
+    requested_run_id: str,
+) -> None:
+    from agrivision_khaos.ingest import create_unified_dataset
+    from agrivision_khaos.quality import compute_dataset_quality
+
+    cache_dir = Path(args.cache_dir)
+    fingerprint = source_fingerprint(raw_dir, policy.model_dump(mode="json"))
+    effective_fingerprint = fingerprint
+    if not args.resume:
+        effective_fingerprint = hashlib.sha256(
+            f"{fingerprint}:{requested_run_id}".encode()
+        ).hexdigest()
+    checkpoint_path = cache_dir / "runs" / dataset_name / "checkpoint.json"
+
+    with PipelineLock(cache_dir / "locks" / f"{slugify(dataset_name)}.lock"):
+        checkpoint = RunCheckpoint(
+            checkpoint_path,
+            effective_fingerprint,
+            requested_run_id,
+        )
+        run_id = checkpoint.run_id
+        report_dir = Path(args.report_dir) / dataset_name / run_id
+        export_dir = Path(args.export_dir) / dataset_name / run_id
+        interim_dir = cache_dir / "interim" / dataset_name / run_id
+
+        if args.resume and checkpoint.data.get("status") == "completed":
+            result = checkpoint.data.get("result", {})
+            success_marker = Path(str(result.get("success_marker", "")))
+            if success_marker.is_file():
+                logger.info("Run ya completado para estas fuentes y política: %s", run_id)
+                logger.info("Resultado: %s", success_marker.parent)
+                return
+
+        report_dir.mkdir(parents=True, exist_ok=True)
+        interim_dir.mkdir(parents=True, exist_ok=True)
+
+        preflight = run_preflight(
+            raw_dir,
+            Path(args.export_dir),
+            cache_dir,
+            database_uri=os.environ.get("FIFTYONE_DATABASE_URI"),
+            require_read_only=args.require_read_only,
+            require_gpu=args.require_gpu,
+            minimum_free_gb=args.minimum_free_gb,
+        )
+        write_json(report_dir / "preflight.json", preflight)
+        if not preflight["valid"]:
+            raise RuntimeError(
+                "Preflight fallido: " + ", ".join(preflight["failed_checks"])
+            )
+
+        logger.info("=== INICIANDO PIPELINE DESATENDIDO ===")
+        logger.info(
+            "Dataset=%s RAW_DIR=%s RUN_ID=%s FINGERPRINT=%s",
+            dataset_name,
+            raw_dir,
+            run_id,
+            fingerprint[:16],
+        )
+
+        tools = optional_tool_status()
+        sources = discover_sources(raw_dir)
+        stage_datumaro_inventory(interim_dir, sources, tools)
+        phases: list[PhaseResult] = []
+        ingestion_payload = checkpoint.phase_payload("ingestion") if args.resume else None
+        can_resume_dataset = (
+            ingestion_payload is not None
+            and fo.dataset_exists(dataset_name)
+            and len(fo.load_dataset(dataset_name)) == ingestion_payload.get("sample_count")
+            and fo.load_dataset(dataset_name).info.get("run_fingerprint")
+            == effective_fingerprint
+        )
+        if can_resume_dataset:
+            dataset = fo.load_dataset(dataset_name)
+            phases.append(_restore_phase(ingestion_payload["phase"]))
+            logger.info("Checkpoint de ingesta reutilizado (%d muestras).", len(dataset))
+        else:
+            dataset = create_unified_dataset(
+                dataset_name,
+                raw_dir,
+                staging_dir=interim_dir / "ingestion",
+                strict=True,
+            )
+            if len(dataset) == 0:
+                raise RuntimeError(f"No se ingestaron imagenes desde {raw_dir}")
+            annotate_sources(dataset, raw_dir, sources)
+            dataset.info["run_fingerprint"] = effective_fingerprint
+            dataset.save()
+            phase = PhaseResult(
+                name="ingestion",
+                kept=len(dataset),
+                notes=[f"{len(sources)} fuentes detectadas."],
+            )
+            phases.append(phase)
+            checkpoint.mark_phase(
+                "ingestion", {"sample_count": len(dataset), "phase": asdict(phase)}
+            )
+
+        quality_payload = checkpoint.phase_payload("quality") if args.resume else None
+        if quality_payload is not None and can_resume_dataset:
+            phases.append(_restore_phase(quality_payload["phase"]))
+            logger.info("Checkpoint de métricas de calidad reutilizado.")
+        else:
+            logger.info("Calculando metricas visuales...")
+            compute_dataset_quality(
+                dataset_name=dataset_name,
+                workers=args.workers,
+                enable_ocr=policy.quality.ocr_enabled,
+                ocr_confidence=policy.quality.ocr_confidence,
+                min_valid_size=policy.quality.min_resolution,
+            )
+            dataset = fo.load_dataset(dataset_name)
+            phase = run_quality_phase(
+                dataset,
+                args.max_phase_drop,
+                args.max_total_drop,
+                policy=policy.quality,
+            )
+            phases.append(phase)
+            checkpoint.mark_phase("quality", {"phase": asdict(phase)})
+
+        duplicates_payload = checkpoint.phase_payload("duplicates") if args.resume else None
+        if duplicates_payload is not None and can_resume_dataset:
+            duplicate_results = [
+                _restore_phase(phase) for phase in duplicates_payload["phases"]
+            ]
+            logger.info("Checkpoint de deduplicación reutilizado.")
+        else:
+            duplicate_results = run_duplicate_phases(
+                dataset,
+                work_dir=interim_dir,
+                max_phase_drop=args.max_phase_drop,
+                max_total_drop=args.max_total_drop,
+                policy=policy,
+            )
+            checkpoint.mark_phase(
+                "duplicates", {"phases": [asdict(phase) for phase in duplicate_results]}
+            )
+        phases.extend(duplicate_results)
+
+        labels_payload = checkpoint.phase_payload("labels") if args.resume else None
+        if labels_payload is not None and can_resume_dataset:
+            label_phase = _restore_phase(labels_payload["phase"])
+            label_mapping = labels_payload["mapping"]
+            logger.info("Checkpoint de ontología/etiquetas reutilizado.")
+        else:
+            label_phase, label_mapping = run_label_phase(
+                dataset, args.cleanlab_mode, args.ontology_map, report_dir
+            )
+            checkpoint.mark_phase(
+                "labels", {"phase": asdict(label_phase), "mapping": label_mapping}
+            )
+        phases.append(label_phase)
+
+        evidence = build_curation_evidence(dataset, duplicate_results)
+        summary = build_summary(
+            dataset=dataset,
+            dataset_name=dataset_name,
+            run_id=run_id,
+            raw_dir=raw_dir,
+            sources=sources,
+            tools=tools,
+            phases=phases,
+            label_mapping=label_mapping,
+        )
+        summary["evidence"] = evidence
+        summary["policy"] = policy.model_dump(mode="json")
+        summary["source_fingerprint"] = fingerprint
+        summary["preflight"] = preflight
+
+        export_dir.parent.mkdir(parents=True, exist_ok=True)
+        if export_dir.exists():
+            raise RuntimeError(
+                f"El destino final ya existe sin checkpoint completo: {export_dir}"
+            )
+        attempt_dir = Path(
+            tempfile.mkdtemp(prefix=f".{run_id}.incomplete-", dir=export_dir.parent)
+        )
+        # mkdtemp intentionally creates mode 0700.  Exported datasets commonly
+        # cross the container/host boundary, so keep the staging directory
+        # private only until its name is allocated and then make the eventual
+        # atomic result traversable by non-root host users.
+        attempt_dir.chmod(0o755)
+        exports = export_clean_dataset(
+            dataset=dataset,
+            export_dir=attempt_dir,
+            output_formats=parse_output_formats(args.output_formats),
+            label_mapping=label_mapping,
+            summary=summary,
+            policy=policy,
+        )
+        export_errors = {
+            key: value for key, value in exports.items() if key.endswith("_error")
+        }
+        if export_errors:
+            raise RuntimeError(f"Falló la exportación transaccional: {export_errors}")
+        exports = {
+            key: str(export_dir / Path(value).relative_to(attempt_dir))
+            for key, value in exports.items()
+        }
+        summary["exports"] = exports
+        write_reports(report_dir, dataset_name, run_id, summary, evidence)
+        write_json(attempt_dir / "curation_summary.json", summary)
+        write_dataset_card(attempt_dir / "DATASET_CARD.md", summary)
+        success_payload = {
+            "dataset": dataset_name,
+            "run_id": run_id,
+            "source_fingerprint": fingerprint,
+        }
+        write_json(attempt_dir / "_SUCCESS", success_payload)
+        os.replace(attempt_dir, export_dir)
+        success_marker = export_dir / "_SUCCESS"
+        checkpoint.mark_phase("export", {"path": str(export_dir)})
+        checkpoint.mark_complete(
+            {"export_dir": str(export_dir), "success_marker": str(success_marker)}
+        )
+
+        logger.info("=== PIPELINE FINALIZADO ===")
+        logger.info("Reporte HTML: %s", report_dir / "report.html")
+        logger.info("Dataset exportado: %s", export_dir)
+        logger.info("")
+        logger.info("[bold cyan]¡Para explorar visualmente el dataset resultante, ejecuta:[/bold cyan]")
+        logger.info(f"    [bold green]make app DATASET=\"{dataset_name}\"[/bold green]")
+        logger.info("[bold cyan]Y abre el puerto configurado por FIFTYONE_PORT (5151 por defecto).[/bold cyan]")
 
 
 def main() -> None:
@@ -1311,94 +2040,85 @@ def main() -> None:
     parser.add_argument("--dataset", required=True, help="Nombre del dataset unificado.")
     parser.add_argument("--raw-dir", required=True, help="Directorio con datasets crudos.")
     parser.add_argument("--profile", default="quality-first", choices=["quality-first"])
+    parser.add_argument("--policy", default="configs/quality-first.yaml")
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--output-formats", default="datumaro,coco,yolo,classification")
+    parser.add_argument("--output-formats", default="coco,yolo,classification")
     parser.add_argument("--cleanlab-mode", default="auto", choices=["auto", "on", "off"])
-    parser.add_argument("--export-dir", default="data/processed")
+    parser.add_argument("--export-dir", default="/datasets/processed")
     parser.add_argument("--report-dir", default="reports/pipeline")
+    parser.add_argument("--cache-dir", default="/datasets/cache")
     parser.add_argument("--ontology-map", default=None, help="Ruta al archivo YAML de ontologia.")
     parser.add_argument("--max-phase-drop", type=float, default=0.40)
     parser.add_argument("--max-total-drop", type=float, default=0.65)
+    parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reutiliza checkpoints compatibles; usa --no-resume para forzar un run nuevo.",
+    )
+    parser.add_argument("--require-read-only", action="store_true")
+    parser.add_argument("--require-gpu", action="store_true")
+    parser.add_argument("--minimum-free-gb", type=float, default=5.0)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Valida fuentes y simula el plan sin MongoDB, modelos ni exportaciones.",
+    )
+    parser.add_argument(
+        "--dry-run-report",
+        default=None,
+        help="Ruta opcional del JSON; por defecto se guarda dentro de --report-dir.",
+    )
     args = parser.parse_args()
+    policy = load_policy(args.policy)
 
     raw_dir = Path(args.raw_dir)
     dataset_name = args.dataset
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_dir = Path(args.report_dir) / dataset_name / run_id
-    export_dir = Path(args.export_dir) / dataset_name / run_id
-    interim_dir = Path("data/interim") / dataset_name / run_id
-    report_dir.mkdir(parents=True, exist_ok=True)
-    export_dir.mkdir(parents=True, exist_ok=True)
-    interim_dir.mkdir(parents=True, exist_ok=True)
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-    logger.info("=== INICIANDO PIPELINE DESATENDIDO ===")
-    logger.info("Dataset=%s RAW_DIR=%s RUN_ID=%s", dataset_name, raw_dir, run_id)
+    try:
+        parse_output_formats(args.output_formats)
+    except ValueError as exc:
+        parser.error(str(exc))
 
-    tools = optional_tool_status()
-    sources = discover_sources(raw_dir)
-    stage_datumaro_inventory(interim_dir, sources, tools)
+    if args.dry_run:
+        logger.info("=== DRY-RUN ESTÁTICO: NO SE EJECUTARÁN MODELOS NI MONGODB ===")
+        report = audit_raw_datasets(raw_dir)
+        report.update(
+            {
+                "dataset": dataset_name,
+                "run_id": run_id,
+                "policy": policy.model_dump(mode="json"),
+                "planned_actions": [
+                    "ingestar y canonicalizar las fuentes detectadas",
+                    "calcular métricas visuales (omitido en dry-run)",
+                    "deduplicar por hash y similitud (solo hash simulado)",
+                    "aplicar revisión de etiquetas (omitido en dry-run)",
+                    f"exportar: {', '.join(parse_output_formats(args.output_formats))}",
+                ],
+            }
+        )
+        report_path = (
+            Path(args.dry_run_report)
+            if args.dry_run_report
+            else Path(args.report_dir) / dataset_name / run_id / "dry_run.json"
+        )
+        write_json(report_path, report)
+        counts = report["counts"]
+        logger.info(
+            "Fuentes=%s Imágenes=%s Anotaciones=%s Errores=%s Avisos=%s",
+            counts["sources"], counts["images"], counts["annotations"],
+            counts["errors"], counts["warnings"],
+        )
+        for issue in report["issues"]:
+            log_method = logger.error if issue["severity"] == "error" else logger.warning
+            log_method("[%s] %s: %s", issue["code"], issue["path"], issue["message"])
+        logger.info("Reporte dry-run: %s", report_path)
+        if not report["valid"]:
+            raise SystemExit(2)
+        return
 
-    create_unified_dataset = load_symbol("src/01_acquisition/make_dataset.py", "create_unified_dataset")
-    compute_dataset_quality = load_symbol("src/02_curation/compute_quality_metrics.py", "compute_dataset_quality")
-
-    phases: list[PhaseResult] = []
-    dataset = create_unified_dataset(dataset_name, raw_dir)
-    if len(dataset) == 0:
-        raise RuntimeError(f"No se ingestaron imagenes desde {raw_dir}")
-
-    annotate_sources(dataset, raw_dir, sources)
-    phases.append(PhaseResult(name="ingestion", kept=len(dataset), notes=[f"{len(sources)} fuentes detectadas."]))
-
-    logger.info("Calculando metricas visuales...")
-    compute_dataset_quality(
-        dataset_name=dataset_name,
-        workers=args.workers,
-        enable_ocr=True,
-        ocr_confidence=60.0,
-    )
-    dataset = fo.load_dataset(dataset_name)
-    phases.append(run_quality_phase(dataset, args.max_phase_drop, args.max_total_drop))
-    duplicate_results = run_duplicate_phases(
-        dataset,
-        work_dir=interim_dir,
-        max_phase_drop=args.max_phase_drop,
-        max_total_drop=args.max_total_drop,
-    )
-    phases.extend(duplicate_results)
-
-    label_phase, label_mapping = run_label_phase(dataset, args.cleanlab_mode, args.ontology_map, report_dir)
-    phases.append(label_phase)
-
-    evidence = build_curation_evidence(dataset, duplicate_results)
-    summary = build_summary(
-        dataset=dataset,
-        dataset_name=dataset_name,
-        run_id=run_id,
-        raw_dir=raw_dir,
-        sources=sources,
-        tools=tools,
-        phases=phases,
-        label_mapping=label_mapping,
-    )
-    summary["evidence"] = evidence
-    exports = export_clean_dataset(
-        dataset=dataset,
-        export_dir=export_dir,
-        output_formats=parse_output_formats(args.output_formats),
-        label_mapping=label_mapping,
-        summary=summary,
-    )
-    summary["exports"] = exports
-    write_reports(report_dir, dataset_name, run_id, summary, evidence)
-    write_json(export_dir / "curation_summary.json", summary)
-
-    logger.info("=== PIPELINE FINALIZADO ===")
-    logger.info("Reporte HTML: %s", report_dir / "report.html")
-    logger.info("Dataset exportado: %s", export_dir)
-    logger.info("")
-    logger.info("[bold cyan]¡Para explorar visualmente el dataset resultante, ejecuta:[/bold cyan]")
-    logger.info(f"    [bold green]make app DATASET=\"{dataset_name}\"[/bold green]")
-    logger.info("[bold cyan]Y abre http://localhost:5152 en tu navegador.[/bold cyan]")
+    _execute_pipeline(args, policy, raw_dir, dataset_name, run_id)
 
 
 if __name__ == "__main__":

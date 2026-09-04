@@ -1,65 +1,60 @@
 # AgriVision Khaos (Andalucía ISI2A2)
 
-Bienvenido a la documentación técnica del pipeline de curación de datos federado **AgriVision Khaos**, desarrollado en el marco del proyecto **Andalucía ISI2A2** (Infraestructura y Servicios de Integración e Inteligencia de Datos en el sector de la Agroalimentación en Andalucía).
+AgriVision Khaos ingiere, armoniza y cura colecciones heterogéneas de imágenes
+agrícolas manteniendo el origen y las decisiones aplicadas a cada muestra. El
+objetivo es producir datasets auditables para visión artificial, con validación
+estructural, métricas de calidad, deduplicación conservadora y exportaciones
+transaccionales.
 
-Este framework de *Data-Centric AI* actúa como el motor fundacional para ingerir, armonizar y curar datos agrícolas heterogéneos, garantizando que tus modelos de Machine Learning se entrenen sobre conjuntos de datos de altísimo valor y Ground Truth impecable.
+## Flujo recomendado
 
----
+1. Instala Docker y GNU Make, clona el repositorio y ejecuta
+   `cp .env.example .env`.
+2. Coloca cada fuente en una subcarpeta independiente de `data/raw/`. Añade un
+   `source.yaml` para declarar versión, licencia, procedencia y contexto.
+3. Comprueba los montajes, espacio y base de datos:
 
-## 🚀 Quick Start (Para Managers y Científicos de Datos)
+   ```bash
+   make preflight
+   ```
 
-Si necesitas generar un dataset limpio de inmediato sin entrar en detalles técnicos, sigue este flujo de 3 pasos (Clone-and-Run):
+4. Valida anotaciones y simula las decisiones sin MongoDB ni modelos:
 
-### 0. Requisitos Previos
-Asegúrate de tener instalados **Docker** y **GNU Make** en tu máquina (o en tu WSL si usas Windows). Si no tienes `make`, instálalo en un segundo:
-```bash
-# En Ubuntu / WSL
-sudo apt update && sudo apt install make
-```
+   ```bash
+   make dry-run DATASET="mi_dataset"
+   ```
 
-<details>
-<summary><strong>¿No tienes permisos de administrador para instalar <code>make</code>? (Despliega aquí)</strong></summary>
-<p>Si estás en un equipo corporativo restringido y no tienes acceso a <code>sudo</code>, puedes usar Docker directamente. <code>make</code> es solo un atajo para que los comandos sean más cortos. 
-En lugar de <code>make pipeline DATASET="mi_dataset" RAW_DIR="data/raw"</code>, puedes ejecutar el comando crudo:</p>
-<pre><code>docker compose run --rm fiftyone uv run python src/02_curation/run_pipeline.py --dataset "mi_dataset" --raw-dir "data/raw"</code></pre>
-<p>Y para abrir la aplicación visual en lugar de <code>make app DATASET="mi_dataset"</code>:</p>
-<pre><code>DATASET_NAME="mi_dataset" docker compose up -d fiftyone</code></pre>
-</details>
+5. Para una prueba local rápida usa `POLICY=configs/cpu-smoke.yaml`. Antes de un
+   proceso completo descarga en caché el modelo activo con `make models`.
+6. Ejecuta:
 
-### 1. Prepara tus Datos Crudos
-Clona este repositorio y coloca todas las carpetas con tus datasets (en formato COCO, YOLO, o carpetas por clase) dentro de `data/raw/`.
+   ```bash
+   make pipeline DATASET="mi_dataset"
+   ```
 
-```bash
-git clone https://github.com/tu-organizacion/agrivision-khaos.git
-cd agrivision-khaos
-# Arrastra tus carpetas a data/raw/
-```
+7. Comprueba el reporte y el marcador `_SUCCESS`. Abre `make app
+   DATASET="mi_dataset"`, resuelve todos los casos `review` y ejecuta `make
+   export DATASET="mi_dataset"` para la publicación Human-in-the-Loop.
 
-### 2. Ejecuta el Pipeline Automático
-Lanza el siguiente comando mágico, indicando el nombre que le quieres dar a tu dataset de salida. Ve a tomarte un café; el sistema ingiriendo, calculando métricas de calidad (Otsu-Blur), buscando duplicados semánticos y generando reportes.
+Los datos originales se montan en `/datasets/raw` como solo lectura. Una
+ejecución interrumpida no publica el destino final y puede reanudarse desde sus
+checkpoints compatibles.
 
-```bash
-make pipeline DATASET="mi_super_dataset" RAW_DIR="data/raw"
-```
-*Al terminar, obtendrás un reporte HTML Premium (estilo SaaS) auditando cada foto eliminada y conservada en `reports/pipeline/`.*
+## Qué significa «unificado»
 
-### 3. Revisión Humana y Exportación Final (Opcional)
-Si quieres auditar visualmente las imágenes que el pipeline marcó como dudosas (las que tienen *padding* artificial o están en el límite de la calidad):
-```bash
-# Abre la interfaz visual
-make app DATASET="mi_super_dataset"
-```
-En tu navegador (`http://localhost:5152`), busca el tag `review`, acepta o rechaza las imágenes haciendo clic, y cuando termines tu curación visual, exporta el resultado final:
-```bash
-# Genera los archivos (COCO, YOLO) finales validados
-make export DATASET="mi_super_dataset"
-```
-¡Y listo! Tus datos curados estarán esperándote en `data/processed/mi_super_dataset_hitl`.
+El resultado es un catálogo común con trazabilidad, ontología normalizada y un
+`task_type` por muestra. Clasificación y detección pueden convivir en FiftyOne,
+pero no se mezclan como si fueran una única tarea: cada exportador selecciona
+las muestras compatibles. El conjunto curado puede contener menos imágenes que
+la suma inicial porque excluye corrupción, duplicados y revisiones pendientes.
 
----
+El pipeline aporta controles técnicos y evidencia reproducible. No puede
+demostrar por sí solo que una etiqueta sea agronómicamente correcta ni que los
+umbrales sean óptimos para un sensor o cultivo nuevo; esas garantías requieren
+revisión experta y un piloto representativo.
 
-## Navegación Profunda
+## Navegación
 
-Si quieres entender cómo funciona el cerebro de AgriVision Khaos, usa el menú lateral para explorar:
-- **Architecture**: Principios de diseño, base de datos no relacional (FiftyOne) y trazabilidad del linaje del dato.
-- **Workflow**: Documentación técnica detallada de cada fase (Ingesta, Métricas de Calidad, Deduplicación, y Revisión Manual).
+- **Architecture**: componentes, persistencia y trazabilidad.
+- **Workflow**: ingesta, calidad, deduplicación, ejecución y revisión manual.
+- **Ejecución remota**: montaje NFS/SSHFS entre almacenamiento y nodo GPU.

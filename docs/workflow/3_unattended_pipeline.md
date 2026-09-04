@@ -4,6 +4,10 @@ Una vez que has configurado tus conjuntos de datos en la carpeta `data/raw` (com
 
 Este pipeline consolida las fases de ingesta, cálculo de métricas de calidad y deduplicación múltiple (exacta, semántica y aumentada) en un único proceso automatizado. 
 
+Por diseño conservador, solo los duplicados exactos se descartan automáticamente.
+Las coincidencias semánticas o basadas en color se apartan para revisión humana.
+Si una fase habilitada falla, el pipeline no publica `_SUCCESS`.
+
 El objetivo es que dejes corriendo tu máquina toda la noche y al día siguiente obtengas:
 1. Un dataset unificado y exportado limpiamente.
 2. Un reporte HTML interactivo con las evidencias de descarte.
@@ -12,15 +16,19 @@ El objetivo es que dejes corriendo tu máquina toda la noche y al día siguiente
 
 ## 1. ¿Cómo Ejecutar el Pipeline?
 
+Antes del primer run real ejecuta `make preflight`. Si aún no tienes GPU, usa
+`POLICY=configs/cpu-smoke.yaml`; el flujo seguirá validando ingesta, calidad
+básica, deduplicación exacta/transformada, ontología y exportaciones.
+
 Puedes ejecutar el pipeline utilizando el comando `make pipeline`:
 
 ```bash
-make pipeline DATASET="nombre_de_tu_dataset_final" RAW_DIR="data/raw" PROFILE="quality-first"
+make pipeline DATASET="nombre_de_tu_dataset_final" PROFILE="quality-first"
 ```
 
 ### Parámetros Explicados
 - **DATASET**: El nombre interno que recibirá el dataset unificado en la base de datos de FiftyOne (ej. `olive_final`).
-- **RAW_DIR**: La ruta a la carpeta donde residen tus datasets crudos (por defecto `data/raw`).
+- **RAW_DIR**: Ruta visible dentro del contenedor; por defecto `/datasets/raw`, montada como solo lectura desde `RAW_DATA_HOST_PATH`.
 - **PROFILE**: El perfil de curación. Actualmente el único perfil soportado (y predeterminado) es `quality-first`, el cual prioriza limpiar la basura, imágenes borrosas y aplicar un bypass estricto (100% de confianza) al borrado de duplicados.
 
 > [!WARNING]
@@ -35,7 +43,9 @@ Si has leído la palabra "Augmentation" (Aumentación) en los reportes o en el c
 **¿Qué hace exactamente?**
 El pipeline asume que los datasets que descargaste de internet *ya venían sucios con aumentación artificial* introducida por sus creadores originales. Por lo tanto, el sistema rastrea estas aumentaciones (espejos, rotaciones a 90 grados) utilizando Histogramas 3D de Color y **las elimina**. 
 
-El sistema siempre conservará la imagen original intacta (basado en el cálculo de padding negro) y borrará los duplicados. ¡El pipeline solo destruye redundancias, no inventa imágenes falsas!
+El sistema conserva un representante por grupo exacto. Las coincidencias por
+embeddings o histogramas son heurísticas y se marcan para revisión por defecto;
+el pipeline no crea imágenes aumentadas.
 
 ## 3. El Reporte HTML Generado
 
@@ -52,15 +62,26 @@ En este reporte encontrarás:
 - **Galerías de Duplicados (Conservada vs Eliminada):** Secciones desplegables que muestran "Pares" interactivos. A la izquierda verás la foto original (Conservada) y a la derecha su clon que fue enviado a la basura (Eliminada), permitiéndote auditar visualmente que el sistema no está fallando.
 
 ## 4. Archivos Resultantes
-Al terminar, el dataset limpio se guardará (por defecto, usando un eficiente sistema de Hard Links que no duplica el peso en el disco) en:
+Al terminar, el dataset limpio se materializa en el almacenamiento de salida. La
+vista de clasificación reutiliza hard links cuando el sistema de archivos lo
+permite y copia como alternativa; otros formatos pueden copiar sus imágenes:
 
 ```bash
 data/processed/<tu_dataset>/<timestamp>/
 ```
 Dentro verás subcarpetas estructuradas para `classification` (una carpeta por etiqueta), formatos `coco`, `yolo`, etc., listas para ser conectadas a tu código de entrenamiento.
 
+El directorio solo se publica al terminar todas las exportaciones y contiene un
+marcador `_SUCCESS`. Si el proceso se interrumpe, repite el comando: los
+checkpoints compatibles de ingesta, calidad, deduplicación y etiquetas se
+reanudarán automáticamente. Usa `--no-resume` únicamente cuando quieras ignorar
+el checkpoint actual.
+
+Si los datos están en otra máquina, sigue la [guía de ejecución remota](../remote_execution.md).
+
 ## Siguiente Paso: Revisión Human-in-the-Loop
 
-La magia del pipeline desatendido reside en que toma un 90% de las decisiones automáticamente. Sin embargo, para no perder información crítica, los casos ambiguos se marcan con la etiqueta `review`. 
+El pipeline automatiza las decisiones de alta confianza. Para no perder
+información crítica, los casos ambiguos se marcan con la etiqueta `review`.
 
 Para auditar y salvar o rechazar estos casos visualmente antes de enviar el dataset al entrenamiento de IA, dirígete a la [Fase 4: Revisión Manual (HitL)](4_manual_review.md).

@@ -36,7 +36,7 @@ El script anterior **no borra nada automáticamente**, simplemente etiqueta las 
    ```bash
    make app
    ```
-2. Entra a tu navegador (`http://localhost:5152`).
+2. Entra a tu navegador (`http://localhost:5151`, salvo que hayas configurado otro puerto).
 3. En el panel izquierdo, busca la sección **PRIMITIVES** o **QUALITY**.
 4. ¡Juega con los filtros! Por ejemplo:
    - Filtra `has_watermark = True` y selecciona todas las imágenes resultantes para borrarlas.

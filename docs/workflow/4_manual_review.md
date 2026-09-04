@@ -16,7 +16,7 @@ Una vez que `make pipeline` haya finalizado, levanta el servicio de interfaz gr�
 make app DATASET="mi_super_dataset"
 ```
 
-Abre tu navegador web y dirígete a [http://localhost:5152](http://localhost:5152).
+Abre tu navegador web y dirígete a [http://localhost:5151](http://localhost:5151), salvo que hayas configurado otro `FIFTYONE_PORT`.
 
 ## 2. Filtrar los Casos a Revisar
 
@@ -52,5 +52,8 @@ make export DATASET="mi_super_dataset"
 ### ¿Qué hace este comando?
 - Lee la base de datos de FiftyOne.
 - Sincroniza las etiquetas visuales (`kept`, `removed`) con el motor lógico del dataset.
-- Genera una carpeta blindada en `data/processed/mi_super_dataset_hitl/YYYYMMDD_HHMMSS`.
+- Exige que no quede ninguna muestra con estado `review` sin resolver.
+- Genera el resultado bajo el directorio configurado por `PROCESSED_DATA_HOST_PATH`.
 - Escupe el manifiesto final y formatea los metadatos a COCO y YOLO exclusivamente para las imágenes que sobrevivieron al filtro.
+- Publica el directorio de forma atómica y añade `_SUCCESS`; si alguna exportación
+  falla, conserva un directorio `.incomplete-*` para diagnóstico.

@@ -19,15 +19,21 @@ make deduplicate METHOD=exact
 ```
 
 ### B) Deduplicación Semántica (IA) 🧠
-Este método utiliza una red neuronal (`ResNet50`) para extraer las "huellas dactilares" visuales de las imágenes. Agrupa imágenes que son visualmente similares (recortadas o comprimidas en JPEG).
+Este método utiliza una red neuronal para extraer representaciones visuales de
+las imágenes: MobileNetV2 en el perfil CPU y ResNet50 cuando CUDA está
+disponible. Propone grupos visualmente similares, como recodificaciones o
+recortes de una misma captura; por defecto los envía a revisión.
 
 ```bash
 make deduplicate METHOD=semantic
 ```
 
-### C) Deduplicación por Aumentación (Color Histograms) 🎨
-Este es el método **definitivo para datasets agrícolas**. ResNet50 a menudo se confunde con rotaciones de 90/180 grados y efectos espejo. 
-El método `augmented` aísla los colores puros de la hoja (ignorando fondos) y genera un histograma 3D. Esto le permite detectar **con precisión matemática** si una hoja es un espejo o una rotación exacta de otra.
+### C) Candidatos por Aumentación (Histogramas de color) 🎨
+Los embeddings pueden ser sensibles a rotaciones y espejos. El método `augmented` aísla
+los colores de la hoja y usa un histograma 3D para proponer imágenes que podrían
+ser transformaciones de la misma captura. Un histograma no conserva estructura
+espacial, por lo que dos hojas distintas pueden parecerse: estos candidatos se
+envían a revisión por defecto y no justifican borrado automático por sí solos.
 
 ```bash
 make deduplicate METHOD=augmented
@@ -35,7 +41,9 @@ make deduplicate METHOD=augmented
 
 #### 🛡️ Desempate Inteligente (Preservación del Original)
 Cuando el sistema encuentra un clúster de imágenes duplicadas (ej: 1 original y 3 rotadas), **no elige al azar**. El algoritmo está programado para medir la cantidad de "padding artificial" (píxeles puros negros o blancos generados en las esquinas por la rotación). 
-La imagen que no tenga este padding artificial es coronada como la "Original" y mantenida a salvo, mientras que las versiones aumentadas se marcan para destrucción.
+La imagen con mejor puntuación de integridad se conserva como representante. En
+el pipeline `quality-first`, estas coincidencias siguen requiriendo revisión;
+solo una coincidencia exacta se retira automáticamente.
 
 ## 2. Inspección Visual vs Borrado Directo
 
@@ -44,15 +52,19 @@ Por seguridad, los comandos anteriores están diseñados para abrir una interfaz
 2. Verás una galería donde las imágenes redundantes aparecen emparejadas al lado de su imagen original.
 3. Esto te permite verificar que el umbral es el correcto y no está mezclando hojas diferentes.
 
-*(Nota: Por defecto, la similitud exigida es del **0.95**. Este umbral es estricto para evitar falsos positivos en hojas muy parecidas).*
+El perfil `quality-first` elimina automáticamente solo duplicados exactos. Los
+candidatos semánticos y por aumentación quedan en `review`. Sus umbrales son
+configurables y deben calibrarse con ejemplos de cada dominio.
 
 ### 3. Purgar Definitivamente
 
 Si tras inspeccionar la interfaz compruebas que los grupos son correctos, debes cerrar el comando anterior (usando `Ctrl+C` en la terminal) y lanzar la versión destructiva que borrará los duplicados para siempre:
 
 ```bash
-docker compose run --rm fiftyone uv run python src/02_curation/deduplicate_dataset.py --dataset agrivision-dataset --method augmented --threshold 0.99 --delete
+docker compose run --rm fiftyone uv run --no-sync agrivision-deduplicate --dataset agrivision-dataset --method augmented --threshold 0.99 --delete
 ```
 *(No olvides cambiar el nombre de `--dataset` si estás usando uno propio, y ajustar el `--method` al que hayas inspeccionado).*
 
-> 🎉 **¡Felicidades!** Una vez completado este paso, tu dataset está purgado de ruido, no tiene fugas de datos por duplicados, y está listo para ser dividido y utilizado para entrenar los modelos finales.
+Tras revisar los candidatos, vuelve a ejecutar la exportación Human-in-the-Loop.
+Ningún método heurístico puede demostrar por sí solo que no queden duplicados;
+el informe y los grupos de split permiten auditar el riesgo residual.

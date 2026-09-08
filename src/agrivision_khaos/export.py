@@ -9,6 +9,7 @@ from pathlib import Path
 import fiftyone as fo
 from rich.logging import RichHandler
 
+from agrivision_khaos.curation_history import ensure_history, record_transition, snapshot
 from agrivision_khaos.execution import atomic_write_json
 from agrivision_khaos.pipeline import export_clean_dataset, load_policy, parse_output_formats
 
@@ -31,6 +32,11 @@ def sync_manual_decisions(
             f"{len(conflicts)} muestras tienen simultáneamente los tags 'kept' y 'removed'"
         )
 
+    review_ids = set(dataset.match(fo.ViewField("curation.status") == "review").values("id"))
+    unresolved_ids = review_ids - kept_ids - removed_ids
+    if require_all_reviews_resolved and unresolved_ids:
+        raise RuntimeError(f"Quedan {len(unresolved_ids)} muestras en revisión; resuélvelas antes de exportar")
+    ensure_history(dataset)
     state_tags = {
         "kept",
         "removed",
@@ -43,11 +49,16 @@ def sync_manual_decisions(
         if not sample_ids:
             continue
         for sample in dataset.select(sorted(sample_ids)).iter_samples(autosave=True):
+            before = snapshot(sample)
             curation = sample.get_field("curation") or fo.DynamicEmbeddedDocument()
             curation["status"] = status
             curation["phase"] = "human_review"
             curation["reason"] = "hitl_approved" if status == "kept" else "hitl_rejected"
             curation["confidence"] = 1.0
+            curation["review_reasons"] = []
+            # This is an explicit whole-sample human decision, not an automatic substitution.
+            curation["representative_id"] = ""
+            curation["evidence_level"] = "human_review"
             sample["curation"] = curation
             sample.tags = sorted(
                 set(
@@ -55,6 +66,7 @@ def sync_manual_decisions(
                     + [f"curation_{status}"]
                 )
             )
+            record_transition(sample, before, "human_review")
     unresolved = len(dataset.match(fo.ViewField("curation.status") == "review"))
     if require_all_reviews_resolved and unresolved:
         raise RuntimeError(

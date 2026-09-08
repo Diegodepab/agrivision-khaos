@@ -421,3 +421,18 @@ class PipelineRuleTests(TestCase):
                 height=80,
             )
             self.assertGreater(dedupe._sample_keep_score(clean), dedupe._sample_keep_score(augmented))
+
+    def test_sharp_variant_beats_a_blurred_image_despite_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sharp_image = np.random.default_rng(4).integers(30, 220, (100, 100, 3), dtype=np.uint8)
+            blurry_image = cv2.GaussianBlur(sharp_image, (15, 15), 4)
+            scores = []
+            for filename, pixels in (("original.jpg", blurry_image), ("image.rf.variant.jpg", sharp_image)):
+                path = root / filename
+                cv2.imwrite(str(path), pixels)
+                gray = cv2.cvtColor(pixels, cv2.COLOR_BGR2GRAY)
+                sample = FakeSample(filename, filepath=str(path), width=100, height=100,
+                                    blur_variance=float(cv2.Laplacian(gray, cv2.CV_64F).var()))
+                scores.append(dedupe._sample_keep_score(sample))
+            self.assertGreater(scores[1], scores[0])

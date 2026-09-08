@@ -23,14 +23,29 @@ from typing import Any
 
 import cv2
 import fiftyone as fo
+import numpy as np
 import yaml
 from pydantic import ValidationError
 from rich.logging import RichHandler
 
+from agrivision_khaos.augmentation import (
+    ALGORITHM_VERSION,
+    EXACT_LEVELS,
+    DescriptorCache,
+    transforms,
+)
+from agrivision_khaos.curation_history import ensure_history, record_transition, snapshot
 from agrivision_khaos.dry_run import audit_raw_datasets
 from agrivision_khaos.execution import PipelineLock, RunCheckpoint, source_fingerprint
+from agrivision_khaos.families import (
+    audit_assignments,
+    human_rejections,
+    relation_groups,
+    stable_identity,
+)
 from agrivision_khaos.models import CurationPolicy, QualityPolicy, SourceManifest
 from agrivision_khaos.preflight import run_preflight
+from agrivision_khaos.split_audit import audit_visual_splits
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,6 +87,8 @@ class Decision:
     keep_reason: str = ""
     cluster_id: str = ""
     representative_id: str = ""
+    evidence_level: str = ""
+    review_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -470,8 +487,12 @@ def render_duplicate_sections(title: str, sections: list[dict[str, object]]) -> 
         for pair in section.get("pairs", []):
             kept = pair.get("kept", {})
             removed = pair.get("removed", {})
+            evidence = pair.get("evidence", {})
             kept_b64 = get_base64_image(str(kept.get("filepath", "")))
-            removed_b64 = get_base64_image(str(removed.get("filepath", "")))
+            removed_b64 = get_base64_image(str(removed.get("filepath", "")),
+                                          transform=str(evidence.get("transform", "r0")),
+                                          affine=evidence.get("affine"),
+                                          reference=str(kept.get("filepath", "")))
             if not kept_b64 or not removed_b64:
                 continue
             import os
@@ -479,19 +500,34 @@ def render_duplicate_sections(title: str, sections: list[dict[str, object]]) -> 
             removed_filename = os.path.basename(str(removed.get("filepath", "")))
             
             kept_metrics = f"<span class='badge'>blur {format_report_value(kept.get('blur_variance'))}</span> <span class='badge'>res {format_report_value(kept.get('width'))}x{format_report_value(kept.get('height'))}</span>"
+            status_names = {"kept": "Conservada", "removed": "Descartada", "review": "En revisión"}
+            kept_state = status_names.get(str(kept.get("status", "")), "Representante")
+            removed_state = status_names.get(str(removed.get("status", "")), "Candidata")
+            full_candidate = ""
+            if evidence.get("affine"):
+                raw_b64 = get_base64_image(str(removed.get("filepath", "")))
+                full_candidate = (
+                    '<details><summary>Ver candidata completa sin alinear</summary>'
+                    f'<img src="data:image/jpeg;base64,{raw_b64}" alt="Candidata completa" style="width:100%;object-fit:contain"></details>'
+                )
+            comparison_note = html.escape(
+                f"Alineación: {'afín estimada' if evidence.get('affine') else evidence.get('transform', 'sin verificar')} · "
+                f"Evidencia: {evidence.get('level', 'candidate')} · "
+                f"Cobertura: {format_report_value(evidence.get('coverage'))}"
+            )
             removed_metrics = f"<span class='badge'>blur {format_report_value(removed.get('blur_variance'))}</span> <span class='badge'>res {format_report_value(removed.get('width'))}x{format_report_value(removed.get('height'))}</span>"
             pair_cards.append(
                 '<div class="example-pair" style="display:flex;gap:10px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#ffffff;box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);">'
-                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{kept_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;">'
-                f'<span class="status-kept" style="display:block;margin-top:8px;font-size:14px;">Conservada</span>'
+                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{kept_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:contain;border-radius:8px;">'
+                f'<span class="status-kept" style="display:block;margin-top:8px;font-size:14px;">{kept_state}</span>'
                 f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(kept.get("source_dataset", "")))} | {html.escape(str(kept.get("label", "")))}</small>'
                 f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(kept_filename)}">{html.escape(kept_filename)}</code>'
                 f'<div style="margin-top:6px;">{kept_metrics}</div></div>'
-                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{removed_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;">'
-                f'<span class="status-removed" style="display:block;margin-top:8px;font-size:14px;">Eliminada</span>'
+                f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{removed_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:contain;border-radius:8px;">'
+                f'<span class="status-removed" style="display:block;margin-top:8px;font-size:14px;">{removed_state}</span>'
                 f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(removed.get("source_dataset", "")))} | {html.escape(str(removed.get("label", "")))}</small>'
                 f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(removed_filename)}">{html.escape(removed_filename)}</code>'
-                f'<div style="margin-top:6px;">{removed_metrics}</div></div>'
+                f'<div style="margin-top:6px;">{removed_metrics}</div><small>{comparison_note}</small>{full_candidate}</div>'
                 "</div>"
             )
         blocks.append(
@@ -806,7 +842,9 @@ def apply_second_opinion(
             if (
                 decision is not None
                 and decision.status == "removed"
-                and decision.confidence < HARD_CONFIDENCE
+                and (decision.confidence < HARD_CONFIDENCE
+                     or (decision.phase.endswith("duplicates")
+                         and decision.evidence_level not in EXACT_LEVELS))
             ):
                 decision.status = "review"
                 decision.reason = f"second_opinion_{decision.reason}"
@@ -828,14 +866,32 @@ def write_decisions(dataset: fo.Dataset, decisions: dict[str, Decision], tag_pre
         result.notes.append("No hubo decisiones nuevas.")
         return result
 
+    ensure_history(dataset)
     for sample in dataset.select(list(decisions)).iter_samples(progress=True, autosave=True):
+        before = snapshot(sample)
         decision = decisions[sample.id]
+        previous = sample_field(sample, "curation")
+        if current_status(sample) == "review":
+            reasons = list(getattr(previous, "review_reasons", []) or [])
+            if getattr(previous, "reason", ""):
+                reasons.append(previous.reason)
+            if (getattr(previous, "phase", "") == decision.phase
+                    and decision.evidence_level in EXACT_LEVELS and decision.status == "removed"):
+                resolved = {decision.reason, getattr(previous, "reason", "")}
+                reasons = [reason for reason in reasons if reason not in resolved]
+            decision.review_reasons = sorted(set(decision.review_reasons + reasons))
+            # A new duplicate decision cannot silently resolve a previous quality/label issue.
+            if decision.status != "review" and decision.review_reasons:
+                decision.status = "review"
+        if decision.status == "review":
+            decision.review_reasons = sorted(set(decision.review_reasons + [decision.reason]))
         sample["curation"] = fo.DynamicEmbeddedDocument(**asdict(decision))
         state_tags = {"curation_kept", "curation_review", "curation_removed"}
         retained_tags = [tag for tag in sample.tags if tag not in state_tags]
         sample.tags = sorted(
             set(retained_tags + [f"curation_{decision.status}", f"{tag_prefix}_{decision.reason}"])
         )
+        record_transition(sample, before, tag_prefix)
         result.removed += int(decision.status == "removed")
         result.review += int(decision.status == "review")
         result.kept += int(decision.status == "kept")
@@ -869,15 +925,25 @@ def decision_for_tagged_duplicates(
     for sample in dataset.match_tags(tag):
         if current_status(sample) == "removed":
             continue
-        representative_id = str(sample_field(sample, "duplicate_representative_id", "") or "")
+        if getattr(sample_field(sample, "curation"), "phase", "") == "human_review":
+            continue
+        evidence = sample_field(sample, f"{tag}_evidence", {}) or {}
+        representative_id = str(evidence.get("representative_id", ""))
+        level = evidence.get("level", "candidate")
+        effective_status = status
+        if status == "removed" and (level not in EXACT_LEVELS or not representative_id):
+            effective_status = "review"
+        if sample_field(sample, "annotation_valid", True) is False:
+            effective_status = "review"
         decisions[sample.id] = Decision(
-            status=status,
+            status=effective_status,
             phase=phase,
             reason=reason_text,
-            confidence=confidence,
+            confidence=1.0 if level in EXACT_LEVELS else min(confidence, 0.85),
+            evidence_level=level,
             keep_reason=(
                 f"duplicate_of:{representative_id}"
-                if status == "removed" and representative_id
+                if effective_status == "removed" and representative_id
                 else "potential_duplicate_requires_human_review"
             ),
             cluster_id=str(sample_field(sample, "duplicate_cluster_id", "") or ""),
@@ -890,6 +956,8 @@ def decisions_for_label_conflicts(dataset: fo.Dataset, tag: str, phase: str) -> 
     decisions = {}
     for sample in dataset.match_tags(f"{tag}_label_conflict"):
         if current_status(sample) == "removed":
+            continue
+        if getattr(sample_field(sample, "curation"), "phase", "") == "human_review":
             continue
         decisions[sample.id] = Decision(
             status="review",
@@ -906,6 +974,73 @@ def decisions_for_label_conflicts(dataset: fo.Dataset, tag: str, phase: str) -> 
 
 
 
+def prepare_duplicate_run(dataset: fo.Dataset, method: str | None = None) -> None:
+    """Restore the pre-dedup state before retrying an incomplete or changed analysis."""
+    baseline_field = f"{method}_baseline" if method else "pre_duplicate_curation"
+    target_phase = ("augmentation_duplicates" if method == "redundant_augmented"
+                    else f"{method.removeprefix('redundant_')}_duplicates") if method else None
+    if baseline_field not in dataset.get_field_schema():
+        dataset.add_sample_field(baseline_field, fo.DictField)
+    ensure_history(dataset)
+    if method and "pre_duplicate_curation" not in dataset.get_field_schema():
+        dataset.add_sample_field("pre_duplicate_curation", fo.DictField)
+    prefixes = ("exact_duplicates_", "semantic_duplicates_", "augmentation_duplicates_",
+                "redundant_exact", "redundant_semantic", "redundant_augmented", "curation_",
+                "consistency_duplicates_")
+    for sample in dataset.iter_samples(autosave=True):
+        before = snapshot(sample)
+        previous = sample_field(sample, "curation")
+        phase = getattr(previous, "phase", "")
+        if phase == "human_review":
+            continue
+        if method and not phase.endswith("duplicates"):
+            sample["pre_duplicate_curation"] = (before["curation"] or asdict(Decision("kept", "ingestion", "", 1.0)))
+        baseline = sample_field(sample, baseline_field)
+        if (phase == target_phase if method else phase.endswith("duplicates")) and baseline:
+            sample["curation"] = fo.DynamicEmbeddedDocument(**dict(baseline))
+        else:
+            sample[baseline_field] = (
+                {key: item for key, item in previous.to_dict().items() if key != "_cls"}
+                if previous is not None else asdict(Decision("kept", "ingestion", "", 1.0))
+            )
+        cleared = (method, target_phase + "_", "curation_") if method else prefixes
+        sample.tags = [tag for tag in sample.tags if not tag.startswith(cleared)]
+        sample.tags.append(f"curation_{current_status(sample)}")
+        record_transition(sample, before, "reset_" + (method or "duplicates"))
+    if method in (None, "redundant_augmented"):
+        dataset.info.pop("augmentation_analysis", None)
+        dataset.save()
+    # Clear all automated methods, including ones now disabled. Human overrides survive.
+    schema = dataset.get_field_schema()
+    if "duplicate_links" in schema:
+        dataset.set_values("duplicate_links", {
+            sample.id: [dict(link) for link in (sample_field(sample, "duplicate_links", []) or [])
+                        if (link.get("method") != method if method else link.get("method") == "human_review")] for sample in dataset
+        }, key_field="id")
+    for name in schema:
+        if name in {"duplicate_cluster_id", "duplicate_family_id", "duplicate_representative_id"}:
+            dataset.set_values(name, [""] * len(dataset))
+        elif name in ({f"{method}_evidence"} if method else {"redundant_exact_evidence", "redundant_semantic_evidence", "redundant_augmented_evidence"}):
+            dataset.set_values(name, [{} for _ in dataset])
+
+
+def reconcile_duplicate_representatives(dataset: fo.Dataset) -> PhaseResult:
+    samples = {sample.id: sample for sample in dataset}
+    decisions = {}
+    for sample in samples.values():
+        curation = sample_field(sample, "curation")
+        representative_id = getattr(curation, "representative_id", "")
+        if current_status(sample) != "removed" or not representative_id:
+            continue
+        representative = samples.get(representative_id)
+        if representative is None or current_status(representative) != "kept":
+            decisions[sample.id] = Decision(
+                "review", "consistency_duplicates", "Representante pendiente de revisión", 0.0,
+                representative_id=representative_id,
+            )
+    return write_decisions(dataset, decisions, "consistency_duplicates")
+
+
 def run_duplicate_phases(
     dataset: fo.Dataset,
     work_dir: Path,
@@ -920,6 +1055,9 @@ def run_duplicate_phases(
     )
 
     policy = policy or CurationPolicy()
+
+    if isinstance(dataset, fo.Dataset):
+        prepare_duplicate_run(dataset)
 
     results = []
     if policy.deduplication.exact_enabled:
@@ -948,10 +1086,8 @@ def run_duplicate_phases(
                 "redundant_semantic",
                 "semantic_duplicates",
                 "Redundante (Semántica)",
-                status=policy.deduplication.semantic_action,
-                confidence=(
-                    0.99 if policy.deduplication.semantic_action == "remove" else 0.85
-                ),
+                status="review",
+                confidence=0.85,
             )
             decisions.update(
                 decisions_for_label_conflicts(
@@ -961,9 +1097,13 @@ def run_duplicate_phases(
             notes = apply_second_opinion(
                 list(dataset), decisions, max_phase_drop, max_total_drop
             )
-            semantic_result = write_decisions(
-                dataset, decisions, "semantic_duplicates"
-            )
+            if policy.deduplication.augmentation_enabled:
+                semantic_result = PhaseResult(
+                    name="semantic_duplicates",
+                    notes=["Candidatos delegados a la verificación de aumentaciones antes de decidir."],
+                )
+            else:
+                semantic_result = write_decisions(dataset, decisions, "semantic_duplicates")
             semantic_result.notes.extend(notes)
             semantic_result.duplicate_pairs = pairs
             results.append(semantic_result)
@@ -976,28 +1116,34 @@ def run_duplicate_phases(
         results.append(PhaseResult(name="semantic_duplicates", notes=["Desactivada por política."]))
 
     if policy.deduplication.augmentation_enabled:
-        logger.info("Detectando aumentaciones por huella de color...")
+        logger.info("Detectando y verificando variantes de una misma captura...")
         try:
             _, pairs = detect_augmentation_duplicates(
                 dataset,
                 "redundant_augmented",
                 threshold=policy.deduplication.augmentation_similarity,
+                policy=policy.deduplication,
+                cache_dir=work_dir / "augmentation-cache",
             )
             decisions = decision_for_tagged_duplicates(
                 dataset,
                 "redundant_augmented",
                 "augmentation_duplicates",
                 "Redundante (Aumentación)",
-                status=policy.deduplication.augmentation_action,
-                confidence=(
-                    0.99 if policy.deduplication.augmentation_action == "remove" else 0.75
-                ),
+                status=("removed" if policy.deduplication.remove_exact_transforms
+                        and policy.deduplication.augmentation_action == "remove" else "review"),
+                confidence=0.75,
             )
             decisions.update(
                 decisions_for_label_conflicts(
                     dataset, "redundant_augmented", "augmentation_duplicates"
                 )
             )
+            for sample in dataset.match_tags("redundant_augmented_invalid"):
+                if current_status(sample) != "removed":
+                    decisions[sample.id] = Decision(
+                        "review", "augmentation_duplicates", "Descriptor visual no disponible", 0.0
+                    )
             notes = apply_second_opinion(
                 list(dataset), decisions, max_phase_drop, max_total_drop
             )
@@ -1015,6 +1161,9 @@ def run_duplicate_phases(
     else:
         results.append(PhaseResult(name="augmentation_duplicates", notes=["Desactivada por política."]))
 
+    consistency = reconcile_duplicate_representatives(dataset)
+    if consistency.review:
+        results.append(consistency)
     return results
 
 
@@ -1197,15 +1346,31 @@ def grouped_counts(dataset: fo.Dataset) -> dict[str, dict[str, dict[str, int]]]:
     }
 
 
-def get_base64_image(filepath: str, max_size: int = 220) -> str:
+def get_base64_image(filepath: str, max_size: int = 220, transform: str = "r0",
+                     affine=None, reference: str = "") -> str:
     try:
-        image = cv2.imread(filepath)
-        if image is None:
-            return ""
+        if affine is not None and reference:
+            cache = DescriptorCache()
+            image = cache.describe(filepath).image()
+            target = cache.describe(reference).image()
+            matrix = np.asarray(affine, dtype=np.float64)
+            if matrix.shape != (2, 3) or not np.isfinite(matrix).all():
+                return ""
+            image = cv2.warpAffine(image, matrix, (target.shape[1], target.shape[0]))
+        else:
+            image = cv2.imread(filepath, cv2.IMREAD_UNCHANGED)
+            if image is None:
+                return ""
+            image = next((variant for name, variant in transforms(image) if name == transform), image)
+        if image.ndim == 3 and image.shape[2] == 4:
+            alpha = image[:, :, 3:4].astype(np.float32) / 255
+            yy, xx = np.indices(image.shape[:2])
+            checker = (180 + ((xx // 8 + yy // 8) % 2) * 50)[:, :, None]
+            image = (image[:, :, :3] * alpha + checker * (1-alpha)).astype(np.uint8)
         height, width = image.shape[:2]
         if max(height, width) > max_size:
             scale = max_size / max(height, width)
-            image = cv2.resize(image, (int(width * scale), int(height * scale)))
+            image = cv2.resize(image, (max(1, int(width * scale)), max(1, int(height * scale))))
         _, buffer = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 82])
         return base64.b64encode(buffer).decode("utf-8")
     except Exception:
@@ -1264,6 +1429,9 @@ def sample_curation_payload(sample: fo.Sample) -> dict[str, object]:
         "keep_reason": str(getattr(curation, "keep_reason", "")),
         "cluster_id": str(getattr(curation, "cluster_id", "")),
         "representative_id": str(getattr(curation, "representative_id", "")),
+        "evidence_level": str(getattr(curation, "evidence_level", "")),
+        "review_reasons": list(getattr(curation, "review_reasons", []) or []),
+        "family_id": str(sample_field(sample, "duplicate_family_id", "")),
         "blur_variance": metric(sample, "blur_variance"),
         "brightness_mean": metric(sample, "brightness_mean"),
         "brightness_p5": metric(sample, "brightness_p5"),
@@ -1386,6 +1554,13 @@ def build_curation_evidence(
                 {
                     "kept": sample_curation_payload(kept_sample),
                     "removed": sample_curation_payload(removed_sample),
+                    "evidence": dict(sample_field(
+                        removed_sample,
+                        {"exact_duplicates": "redundant_exact_evidence",
+                         "semantic_duplicates": "redundant_semantic_evidence",
+                         "augmentation_duplicates": "redundant_augmented_evidence"}.get(result.name, ""),
+                        {},
+                    ) or {}),
                 }
             )
 
@@ -1416,14 +1591,6 @@ def build_curation_evidence(
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _split_group_key(sample: fo.Sample) -> str:
-    for field_name in ("duplicate_cluster_id", "capture_group", "video_id", "location"):
-        value = sample_field(sample, field_name)
-        if value:
-            return f"{field_name}:{value}"
-    return f"asset:{sample.id}"
 
 
 def _split_labels(sample: fo.Sample) -> list[str]:
@@ -1502,15 +1669,17 @@ def partition_dataset(
     train_p: float = 0.8,
     val_p: float = 0.1,
     test_p: float = 0.1,
+    group_by_location: bool = False,
 ) -> dict[str, int]:
     """Creates deterministic group-aware and approximately stratified splits."""
     logger.info("Generando partición estratificada por grupos (Train/Val/Test)...")
-    dataset.untag_samples(["train", "val", "test"])
-    eligible = [sample for sample in dataset if current_status(sample) == "kept"]
+    all_samples = list(dataset)
+    groups = relation_groups(all_samples, captures=True, locations=group_by_location)
+    eligible = [sample for sample in all_samples if current_status(sample) == "kept"]
     samples_by_group: dict[str, list[fo.Sample]] = defaultdict(list)
     labels_by_group: dict[str, list[str]] = defaultdict(list)
     for sample in eligible:
-        group = _split_group_key(sample)
+        group = groups[sample.id]
         samples_by_group[group].append(sample)
         labels_by_group[group].extend(_split_labels(sample))
 
@@ -1524,10 +1693,37 @@ def partition_dataset(
         for group, samples in samples_by_group.items()
         for sample in samples
     }
+    audit_assignments(all_samples, sample_assignments, locations=group_by_location)
+    dataset.untag_samples(["train", "val", "test"])
+    if "split_group_id" not in dataset.get_field_schema():
+        dataset.add_sample_field("split_group_id", fo.StringField)
+    dataset.set_values("split_group_id", groups, key_field="id")
     for sample in dataset.select(list(sample_assignments)).iter_samples(autosave=True):
         split = sample_assignments[sample.id]
         sample.tags = sorted(set(sample.tags + [split]))
     return dict(Counter(sample_assignments.values()))
+
+def audit_duplicate_representatives(dataset, cache: DescriptorCache | None = None):
+    samples = {sample.id: sample for sample in dataset}
+    for sample in samples.values():
+        curation = sample_field(sample, "curation")
+        if current_status(sample) != "removed":
+            continue
+        if not getattr(curation, "representative_id", ""):
+            if getattr(curation, "phase", "").endswith("duplicates"):
+                raise RuntimeError(f"Descarte automático sin representante para {sample.id}")
+            continue
+        representative = samples.get(curation.representative_id)
+        if representative is None or current_status(representative) != "kept":
+            raise RuntimeError(f"Representante ausente o no conservado para {sample.id}")
+        if cache is not None:
+            from agrivision_khaos.deduplication import _compatible_annotations
+            left = cache.describe(representative.filepath)
+            right = cache.describe(sample.filepath)
+            evidence = cache.verify(left, right, CurationPolicy().deduplication)
+            if evidence["level"] not in EXACT_LEVELS or not _compatible_annotations(representative, sample, evidence):
+                raise RuntimeError(f"Sustitución obsoleta o incompatible para {sample.id}; repite la detección")
+
 
 def export_clean_dataset(
     dataset: fo.Dataset,
@@ -1554,8 +1750,39 @@ def export_clean_dataset(
         train_p=policy.splits.train,
         val_p=policy.splits.val,
         test_p=policy.splits.test,
+        group_by_location=policy.splits.group_by_location,
     )
     summary["splits"] = split_counts
+    audited_samples = list(dataset)
+    assigned = {sample.id: next(tag for tag in sample.tags if tag in {"train", "val", "test"})
+                for sample in audited_samples if current_status(sample) == "kept"}
+    summary["split_audit"] = audit_assignments(
+        audited_samples, assigned, locations=policy.splits.group_by_location
+    )
+    with tempfile.TemporaryDirectory(prefix="agrivision-split-audit-") as audit_cache:
+        content_cache = DescriptorCache(Path(audit_cache))
+        audit_duplicate_representatives(dataset, content_cache)
+        summary["visual_split_audit"] = audit_visual_splits(
+            {sample.id: sample.filepath for sample in audited_samples if sample.id in assigned},
+            assigned, policy.deduplication, content_cache,
+            human_rejections(audited_samples),
+        )
+    write_json(export_dir / "duplicate_evidence.json", {
+        "version": ALGORITHM_VERSION,
+        "samples": [{"id": sample.id, "stable_id": stable_identity(sample),
+                     "source_path": sample_field(sample, "source_path", sample.filepath),
+                     "links": list(sample_field(sample, "duplicate_links", []) or []),
+                     "annotations": {
+                         name: json.loads(label.to_json()) for name in
+                         ("ground_truth_classification", "ground_truth_detections")
+                         if (label := sample_field(sample, name)) is not None
+                     },
+                     "curation": sample_curation_payload(sample),
+                     "history": sample_field(sample, "curation_history", []),
+                     "review_history": sample_field(sample, "duplicate_review_history", [])} for sample in audited_samples],
+        "analysis": dataset.info.get("augmentation_analysis", {}),
+        "policy": policy.model_dump(mode="json"),
+    })
     
     clean_view = dataset.match(fo.ViewField("curation.status") == "kept")
     if not len(clean_view):
@@ -1598,6 +1825,11 @@ def export_clean_dataset(
                 "task_type": str(sample_field(sample, "task_type", "unlabeled")),
                 "normalized_labels": ",".join(sample_field(sample, "normalized_labels", []) or []),
                 "asset_sha256": str(sample_field(sample, "asset_sha256", "") or ""),
+                "family_id": str(sample_field(sample, "duplicate_family_id", "")),
+                "split_group_id": str(sample_field(sample, "split_group_id", "")),
+                "representative_id": str(getattr(sample_field(sample, "curation"), "representative_id", "")),
+                "curation_reason": str(getattr(sample_field(sample, "curation"), "reason", "")),
+                "deduplication_version": ALGORITHM_VERSION,
                 "source_version": str(sample_field(sample, "source_version", "unknown")),
                 "source_license": str(sample_field(sample, "source_license", "unknown")),
             }
@@ -1815,7 +2047,9 @@ def _execute_pipeline(
     from agrivision_khaos.quality import compute_dataset_quality
 
     cache_dir = Path(args.cache_dir)
-    fingerprint = source_fingerprint(raw_dir, policy.model_dump(mode="json"))
+    fingerprint = source_fingerprint(raw_dir, {
+        **policy.model_dump(mode="json"), "deduplication_version": ALGORITHM_VERSION,
+    })
     effective_fingerprint = fingerprint
     if not args.resume:
         effective_fingerprint = hashlib.sha256(
@@ -1939,7 +2173,7 @@ def _execute_pipeline(
         else:
             duplicate_results = run_duplicate_phases(
                 dataset,
-                work_dir=interim_dir,
+                work_dir=cache_dir / "deduplication" / dataset_name,
                 max_phase_drop=args.max_phase_drop,
                 max_total_drop=args.max_total_drop,
                 policy=policy,
@@ -1962,6 +2196,7 @@ def _execute_pipeline(
                 "labels", {"phase": asdict(label_phase), "mapping": label_mapping}
             )
         phases.append(label_phase)
+        phases.append(reconcile_duplicate_representatives(dataset))
 
         evidence = build_curation_evidence(dataset, duplicate_results)
         summary = build_summary(

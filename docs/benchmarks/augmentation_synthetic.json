@@ -1,0 +1,397 @@
+{
+  "date": "2026-09-08",
+  "synthetic": true,
+  "environment": {
+    "python": "3.13",
+    "opencv": "4.13.0",
+    "execution": "CPU, contenedor Linux local; sin MongoDB ni modelos para el benchmark"
+  },
+  "runs": [
+    {
+      "name": "90_warm_oracle",
+      "arguments": "--families 6 --compare-exhaustive",
+      "manifest_sha256": "fd033fe70195c62a20763828e40976aa7166458d80c762003a909a39124ea501",
+      "stats": {
+        "version": "augmentation-v3",
+        "images": 90,
+        "invalid": {},
+        "candidates": 630,
+        "saturated_images": 1,
+        "descriptor_hits": 90,
+        "descriptor_misses": 0,
+        "pair_cache_hits": 630,
+        "seconds": 0.23178559500001938,
+        "retrieval": "indexed",
+        "index_seconds": 0.012589351000087845,
+        "retrieval_seconds": 0.004568951000010202,
+        "pool_truncated_images": 0,
+        "scored_neighbors": 8010,
+        "low_information": [],
+        "pair_levels": {
+          "candidate": 198,
+          "rejected": 162,
+          "verified_visual": 102,
+          "exact_pixels": 168
+        },
+        "process_peak_rss_mb": 69.390625,
+        "images_per_second": 388.2898762539254,
+        "comparisons_per_image": 7.0
+      },
+      "confirmed_pairs": 270,
+      "false_positive_pairs": 0,
+      "pair_precision": 1.0,
+      "member_recovery": {
+        "brightness": {
+          "recovered": 0,
+          "total": 6,
+          "recall": 0.0
+        },
+        "contrast": {
+          "recovered": 0,
+          "total": 6,
+          "recall": 0.0
+        },
+        "crop": {
+          "recovered": 0,
+          "total": 6,
+          "recall": 0.0
+        },
+        "jpeg": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "mirror_r0": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "mirror_r180": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "mirror_r270": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "mirror_r90": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "r0": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "r180": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "r270": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "r90": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        },
+        "rotation_padding": {
+          "recovered": 0,
+          "total": 6,
+          "recall": 0.0
+        },
+        "scale": {
+          "recovered": 6,
+          "total": 6,
+          "recall": 1.0
+        }
+      },
+      "retrieval_comparison": {
+        "evaluated": true,
+        "oracle_candidates": 630,
+        "candidate_recall": 1.0,
+        "confirmed_pair_recall": 1.0,
+        "missed_confirmed_pairs": []
+      },
+      "hsv_pairwise_baseline": {
+        "evaluated": true,
+        "image_limit": 2000,
+        "pairs": 470,
+        "false_positive_pairs": 112,
+        "precision": 0.7617021276595745
+      },
+      "family_consistency": {
+        "evaluated_families": 6,
+        "families_with_false_links": 0,
+        "wilson_95_interval": [
+          0.6096657120978346,
+          1.0
+        ],
+        "assumption": "Capturas independientes; no es un intervalo de precisión de sustituciones"
+      }
+    },
+    {
+      "name": "900_cold",
+      "arguments": "--families 60 --baseline-limit 0",
+      "manifest_sha256": "6ff0ce7361bde2802231e480ff64bac8038f779f2e0cafe3392ac1c9118df5d2",
+      "stats": {
+        "version": "augmentation-v3",
+        "images": 900,
+        "invalid": {},
+        "candidates": 9586,
+        "saturated_images": 316,
+        "descriptor_hits": 0,
+        "descriptor_misses": 900,
+        "pair_cache_hits": 0,
+        "seconds": 168.646281607,
+        "retrieval": "indexed",
+        "index_seconds": 0.06724122599985094,
+        "retrieval_seconds": 0.2129628010000033,
+        "pool_truncated_images": 900,
+        "scored_neighbors": 132702,
+        "low_information": [],
+        "pair_levels": {
+          "candidate": 1158,
+          "rejected": 6249,
+          "verified_visual": 720,
+          "exact_pixels": 1459
+        },
+        "process_peak_rss_mb": 109.5546875,
+        "images_per_second": 5.336613362738047,
+        "comparisons_per_image": 10.651111111111112
+      },
+      "confirmed_pairs": 2179,
+      "false_positive_pairs": 0,
+      "pair_precision": 1.0,
+      "member_recovery": {
+        "brightness": {
+          "recovered": 2,
+          "total": 60,
+          "recall": 0.03333333333333333
+        },
+        "contrast": {
+          "recovered": 2,
+          "total": 60,
+          "recall": 0.03333333333333333
+        },
+        "crop": {
+          "recovered": 0,
+          "total": 60,
+          "recall": 0.0
+        },
+        "jpeg": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r0": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r180": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r270": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r90": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r0": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r180": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r270": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r90": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "rotation_padding": {
+          "recovered": 0,
+          "total": 60,
+          "recall": 0.0
+        },
+        "scale": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        }
+      },
+      "retrieval_comparison": {
+        "evaluated": false
+      },
+      "hsv_pairwise_baseline": {
+        "evaluated": false,
+        "image_limit": 0,
+        "pairs": 0,
+        "false_positive_pairs": 0,
+        "precision": null
+      },
+      "family_consistency": {
+        "evaluated_families": 60,
+        "families_with_false_links": 0,
+        "wilson_95_interval": [
+          0.93982814785791,
+          0.9999999999999998
+        ],
+        "assumption": "Capturas independientes; no es un intervalo de precisión de sustituciones"
+      }
+    },
+    {
+      "name": "900_warm",
+      "arguments": "--families 60 --baseline-limit 0",
+      "manifest_sha256": "6ff0ce7361bde2802231e480ff64bac8038f779f2e0cafe3392ac1c9118df5d2",
+      "stats": {
+        "version": "augmentation-v3",
+        "images": 900,
+        "invalid": {},
+        "candidates": 9586,
+        "saturated_images": 316,
+        "descriptor_hits": 900,
+        "descriptor_misses": 0,
+        "pair_cache_hits": 9586,
+        "seconds": 2.8366915180001797,
+        "retrieval": "indexed",
+        "index_seconds": 0.12680354400004035,
+        "retrieval_seconds": 0.21152187899997443,
+        "pool_truncated_images": 900,
+        "scored_neighbors": 132702,
+        "low_information": [],
+        "pair_levels": {
+          "candidate": 1158,
+          "rejected": 6249,
+          "verified_visual": 720,
+          "exact_pixels": 1459
+        },
+        "process_peak_rss_mb": 91.3671875,
+        "images_per_second": 317.27101600193913,
+        "comparisons_per_image": 10.651111111111112
+      },
+      "confirmed_pairs": 2179,
+      "false_positive_pairs": 0,
+      "pair_precision": 1.0,
+      "member_recovery": {
+        "brightness": {
+          "recovered": 2,
+          "total": 60,
+          "recall": 0.03333333333333333
+        },
+        "contrast": {
+          "recovered": 2,
+          "total": 60,
+          "recall": 0.03333333333333333
+        },
+        "crop": {
+          "recovered": 0,
+          "total": 60,
+          "recall": 0.0
+        },
+        "jpeg": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r0": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r180": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r270": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "mirror_r90": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r0": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r180": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r270": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "r90": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        },
+        "rotation_padding": {
+          "recovered": 0,
+          "total": 60,
+          "recall": 0.0
+        },
+        "scale": {
+          "recovered": 60,
+          "total": 60,
+          "recall": 1.0
+        }
+      },
+      "retrieval_comparison": {
+        "evaluated": false
+      },
+      "hsv_pairwise_baseline": {
+        "evaluated": false,
+        "image_limit": 0,
+        "pairs": 0,
+        "false_positive_pairs": 0,
+        "precision": null
+      },
+      "family_consistency": {
+        "evaluated_families": 60,
+        "families_with_false_links": 0,
+        "wilson_95_interval": [
+          0.93982814785791,
+          0.9999999999999998
+        ],
+        "assumption": "Capturas independientes; no es un intervalo de precisión de sustituciones"
+      }
+    }
+  ],
+  "limitations": [
+    "Imágenes sintéticas: no calibran precisión agrícola ni seguridad de sustituciones.",
+    "La referencia exhaustiva se comparó con 90 imágenes; no se midió recall de parejas del índice contra ella a 900.",
+    "La recuperación se mide por miembros con alguna relación confirmada correcta, no por todas las parejas de una familia.",
+    "Los tiempos corresponden a detección y la memoria al máximo del proceso; no son garantías para otra máquina.",
+    "Las coincidencias aproximadas siguen en revisión."
+  ]
+}

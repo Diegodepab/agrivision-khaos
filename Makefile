@@ -20,6 +20,9 @@ MAX_PHASE_DROP ?= 0.40
 MAX_TOTAL_DROP ?= 0.65
 REQUIRE_GPU ?= 0
 MOCK_DIR ?= data/mock
+BENCHMARK_DIR ?= /datasets/cache/augmentation-benchmark
+BENCHMARK_ARGS ?=
+BENCHMARK_MANIFEST ?=
 HOST_UID ?= $(shell id -u)
 HOST_GID ?= $(shell id -g)
 
@@ -74,7 +77,21 @@ quality:
 ## Ejecuta el motor de deduplicación de imágenes (Fase 2)
 deduplicate:
 	@echo "Ejecutando motor de deduplicación..."
-	$(DOCKER_CMD) agrivision-deduplicate --dataset $(DATASET) --method $(METHOD) --inspect
+	$(DOCKER_CMD) agrivision-deduplicate --dataset $(DATASET) --method $(METHOD) --policy $(POLICY) --inspect
+
+## Recalcula y persiste candidatos de duplicidad para su revisión
+deduplicate-detect:
+	$(DOCKER_CMD) agrivision-deduplicate --dataset $(DATASET) --method $(METHOD) --policy $(POLICY)
+
+## Aplica la política a parejas persistidas, conservando archivos y registros originales
+deduplicate-apply:
+	$(DOCKER_CMD) agrivision-deduplicate --dataset $(DATASET) --method $(METHOD) --policy $(POLICY) --apply
+
+## Evalúa familias sintéticas o un manifiesto de parejas/familias revisadas, sin MongoDB
+augmentation-benchmark:
+	docker compose run --rm --no-deps fiftyone uv run --no-sync python -m agrivision_khaos.augmentation_benchmark \
+		--output-dir "$(BENCHMARK_DIR)" --policy "$(POLICY)" $(BENCHMARK_ARGS) \
+		$(if $(BENCHMARK_MANIFEST),--manifest "$(BENCHMARK_MANIFEST)")
 
 ## Ejecuta todo el flujo desatendido y genera un reporte HTML
 pipeline:

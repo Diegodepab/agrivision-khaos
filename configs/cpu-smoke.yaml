@@ -18,7 +18,15 @@ deduplication:
   augmentation_similarity: 0.92
   semantic_action: review
   augmentation_action: review
+  remove_exact_transforms: false
+  candidate_neighbors: 20
+  candidate_retrieval: indexed
+  candidate_pool: 512
+  phash_distance: 12
+  verification_min_correlation: 0.97
+  verification_max_error: 0.04
 splits:
   train: 0.80
   val: 0.10
   test: 0.10
+  group_by_location: false

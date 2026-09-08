@@ -2,7 +2,7 @@
 
 Aunque el pipeline desatendido (`make pipeline`) es extremadamente potente y toma decisiones automáticas basadas en calidad y duplicidad, siempre existirán **casos límite** donde la IA o los algoritmos heurísticos prefieren no destruir datos ante la duda.
 
-Estos casos (por ejemplo, hojas borrosas que son la única copia disponible, o imágenes con aumentación artificial donde falta la foto original) se marcan con la etiqueta `"review"`. 
+Estos casos (por ejemplo, hojas borrosas que son la única copia disponible, o imágenes con aumentación artificial donde falta la foto original) se marcan con la etiqueta `"curation_review"`.
 
 Esta fase te permite utilizar la interfaz visual de FiftyOne para validar o rechazar estas imágenes manualmente, y generar la exportación final limpia.
 
@@ -22,7 +22,7 @@ Abre tu navegador web y dirígete a [http://localhost:5151](http://localhost:515
 
 1. En la barra superior de búsqueda de FiftyOne, haz clic en el icono de **Filtros**.
 2. Despliega la pestaña de **Tags**.
-3. Selecciona la etiqueta `review`. 
+3. Selecciona la etiqueta `curation_review`.
 4. La cuadrícula de imágenes se actualizará instantáneamente para mostrarte únicamente las fotos dudosas.
 
 *(Opcionalmente, puedes filtrar por `curation.status == "review"` en el menú lateral de la izquierda).*
@@ -33,11 +33,11 @@ FiftyOne te permite re-etiquetar imágenes visualmente con un par de clics:
 
 1. Haz clic en la **casilla de verificación** (arriba a la izquierda de cada imagen) para seleccionar las imágenes que has decidido **salvar** o **destruir**. Puedes seleccionar múltiples imágenes a la vez, o usar el selector global para seleccionarlas todas.
 2. En el menú superior (icono de etiqueta 🏷️), haz clic en **Tag samples**.
-3. **Para salvarlas:** Elimina la etiqueta `review` y añade la etiqueta `kept`.
-4. **Para destruirlas:** Elimina la etiqueta `review` y añade la etiqueta `removed`.
+3. **Para salvarlas:** Elimina la etiqueta `curation_review` y añade la etiqueta `kept`.
+4. **Para destruirlas:** Elimina la etiqueta `curation_review` y añade la etiqueta `removed`.
 5. Dale a guardar.
 
-Repite este proceso hasta que tu vista filtrada por `review` esté completamente vacía. ¡Felicidades, has curado el dataset manualmente!
+Repite este proceso hasta que tu vista filtrada por `curation_review` esté completamente vacía. ¡Felicidades, has curado el dataset manualmente!
 
 ## 4. Exportación Definitiva (HitL)
 
@@ -57,3 +57,8 @@ make export DATASET="mi_super_dataset"
 - Escupe el manifiesto final y formatea los metadatos a COCO y YOLO exclusivamente para las imágenes que sobrevivieron al filtro.
 - Publica el directorio de forma atómica y añade `_SUCCESS`; si alguna exportación
   falla, conserva un directorio `.incomplete-*` para diagnóstico.
+
+Las relaciones entre imágenes se pueden confirmar o rechazar sin aceptar sus
+estados mediante `--review-file`; consulta la [guía de deduplicación](2_deduplication.md).
+La aprobación `kept` resuelve explícitamente todos los motivos acumulados de la
+muestra, disponibles en `curation.review_reasons`.

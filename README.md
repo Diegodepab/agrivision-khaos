@@ -83,3 +83,7 @@ El código fuente (`src/`) sigue las fases de madurez de un proyecto de Intelige
 ## ⚖️ Licencia
 
 Este proyecto está bajo la licencia [Apache 2.0](LICENSE).
+
+La [guía de deduplicación](docs/workflow/2_deduplication.md) explica la detección
+de variantes, la revisión de familias y el benchmark reproducible con
+`make augmentation-benchmark`.

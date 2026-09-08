@@ -1,8 +1,8 @@
 # Fase 3: Pipeline Automatizado (Unattended Pipeline)
 
-Una vez que has configurado tus conjuntos de datos en la carpeta `data/raw` (como se explica en la Fase 0), AgriVision Khaos ofrece la capacidad de ejecutar un **Pipeline Desatendido (End-to-End)**. 
+Una vez que has configurado tus conjuntos de datos en la carpeta `data/raw` (como se explica en la Fase 0), AgriVision Khaos ofrece la capacidad de ejecutar un **Pipeline Desatendido (End-to-End)**.
 
-Este pipeline consolida las fases de ingesta, cálculo de métricas de calidad y deduplicación múltiple (exacta, semántica y aumentada) en un único proceso automatizado. 
+Este pipeline consolida las fases de ingesta, cálculo de métricas de calidad y deduplicación múltiple (exacta, semántica y aumentada) en un único proceso automatizado.
 
 Por diseño conservador, solo los duplicados exactos se descartan automáticamente.
 Las coincidencias semánticas o basadas en color se apartan para revisión humana.
@@ -29,7 +29,7 @@ make pipeline DATASET="nombre_de_tu_dataset_final" PROFILE="quality-first"
 ### Parámetros Explicados
 - **DATASET**: El nombre interno que recibirá el dataset unificado en la base de datos de FiftyOne (ej. `olive_final`).
 - **RAW_DIR**: Ruta visible dentro del contenedor; por defecto `/datasets/raw`, montada como solo lectura desde `RAW_DATA_HOST_PATH`.
-- **PROFILE**: El perfil de curación. Actualmente el único perfil soportado (y predeterminado) es `quality-first`, el cual prioriza limpiar la basura, imágenes borrosas y aplicar un bypass estricto (100% de confianza) al borrado de duplicados.
+- **PROFILE**: El perfil de curación. Actualmente el único perfil soportado (y predeterminado) es `quality-first`, el cual prioriza la calidad y la revisión de coincidencias visuales. Solo la equivalencia exacta con anotaciones compatibles permite un descarte automático.
 
 > [!WARNING]
 > No existe un perfil `agressive`. Si viste este término previamente, fue un error de transcripción. Usa siempre `quality-first` o simplemente omítelo para que tome el valor por defecto.
@@ -41,7 +41,7 @@ make pipeline DATASET="nombre_de_tu_dataset_final" PROFILE="quality-first"
 Si has leído la palabra "Augmentation" (Aumentación) en los reportes o en el código (`detect_augmentation_duplicates`), debes saber que se refiere a una **estrategia de limpieza defensiva**.
 
 **¿Qué hace exactamente?**
-El pipeline asume que los datasets que descargaste de internet *ya venían sucios con aumentación artificial* introducida por sus creadores originales. Por lo tanto, el sistema rastrea estas aumentaciones (espejos, rotaciones a 90 grados) utilizando Histogramas 3D de Color y **las elimina**. 
+El pipeline busca variantes que puedan venir incluidas en las fuentes. Combina huellas de píxeles, huellas perceptuales y color, y verifica la estructura de cada pareja. Por defecto envía las aumentaciones a revisión; un histograma similar no demuestra que sean la misma captura.
 
 El sistema conserva un representante por grupo exacto. Las coincidencias por
 embeddings o histogramas son heurísticas y se marcan para revisión por defecto;
@@ -59,7 +59,7 @@ reports/pipeline/<tu_dataset>/<timestamp>/
 Allí encontrarás un archivo **`report.html`**. Puedes abrirlo con cualquier navegador web.
 En este reporte encontrarás:
 - **Tarjetas de Descartes por Calidad:** Ejemplos visuales de las hojas que fueron borradas por estar borrosas, poseer marcas de agua o ser diminutas.
-- **Galerías de Duplicados (Conservada vs Eliminada):** Secciones desplegables que muestran "Pares" interactivos. A la izquierda verás la foto original (Conservada) y a la derecha su clon que fue enviado a la basura (Eliminada), permitiéndote auditar visualmente que el sistema no está fallando.
+- **Galerías de Duplicados (Conservada vs Eliminada):** Secciones desplegables que muestran "Pares" interactivos. A la izquierda verás la foto original (Conservada) y a la derecha la candidata alineada y su estado real (conservada, en revisión o descartada), permitiéndote auditar visualmente que el sistema no está fallando.
 
 ## 4. Archivos Resultantes
 Al terminar, el dataset limpio se materializa en el almacenamiento de salida. La

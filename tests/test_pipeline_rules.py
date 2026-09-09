@@ -304,6 +304,22 @@ class PipelineRuleTests(TestCase):
             self.assertEqual(report["splits"]["train"], "images/train")
             self.assertIn(str(raw.resolve()), staged.read_text(encoding="utf-8"))
 
+    def test_yolo_staging_resolves_roboflow_relative_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw"
+            (raw / "train" / "images").mkdir(parents=True)
+            (raw / "valid" / "images").mkdir(parents=True)
+            (raw / "test" / "images").mkdir(parents=True)
+            source = raw / "data.yaml"
+            content = "train: ../train/images\nval: ../valid/images\ntest: ../test/images\nnc: 1\nnames: [fruit]\n"
+            source.write_text(content, encoding="utf-8")
+
+            staged, report = ingest._stage_yolo_yaml(source, raw, root / "staging")
+            self.assertEqual(report["splits"]["train"], "train/images")
+            self.assertEqual(report["splits"]["val"], "valid/images")
+            self.assertEqual(report["splits"]["test"], "test/images")
+
     def test_normalize_label_uses_safe_aliases(self):
         self.assertEqual(pipeline.normalize_label("Healthy"), "healthy")
         self.assertEqual(pipeline.normalize_label("sağlam"), "healthy")

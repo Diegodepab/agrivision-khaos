@@ -296,11 +296,24 @@ def _stage_yolo_yaml(yaml_path: Path, dataset_root: Path, staging_dir: Path) -> 
 
         original = Path(value.replace("\\", "/"))
         candidates = [] if original.is_absolute() else [dataset_root / original]
+        clean_parts = [p for p in original.parts if p not in ("..", ".")]
+        if clean_parts:
+            candidates.append(dataset_root / Path(*clean_parts))
+
+        key_aliases = (key, "valid", "validation") if key == "val" else (key,)
+        for alias in key_aliases:
+            candidates.extend(
+                dataset_root / candidate
+                for candidate in (
+                    Path(alias),
+                    Path(alias) / "images",
+                    Path("images") / alias,
+                )
+            )
+
         candidates.extend(
             dataset_root / candidate
             for candidate in (
-                Path(key),
-                Path("images") / key,
                 Path("images") / original.name,
                 Path(original.name),
             )

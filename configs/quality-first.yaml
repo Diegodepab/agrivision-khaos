@@ -1,6 +1,6 @@
 schema_version: "1.0"
 quality:
-  min_resolution: 320
+  min_resolution: 224
   ocr_enabled: true
   ocr_confidence: 60.0
   severe_blur: 15.0

@@ -32,9 +32,8 @@ transaccionales.
    make pipeline DATASET="mi_dataset"
    ```
 
-7. Comprueba el reporte y el marcador `_SUCCESS`. Abre `make app
-   DATASET="mi_dataset"`, resuelve todos los casos `review` y ejecuta `make
-   export DATASET="mi_dataset"` para la publicación Human-in-the-Loop.
+7. Comprueba el reporte HTML generado en `reports/pipeline/<dataset>/<run_id>/report.html`.
+8. **Auditoría visual y Human-in-the-Loop:** Inicia la app con `make app DATASET="mi_dataset"` (puerto 5151). Filtra por las Vistas Guardadas (`01_Exportadas_Kept`, `02_En_Revision_Review`, `03_Descartadas_Removed`), audita muestras con la tecla `t` (`kept` para salvar/recuperar, `removed` para descartar) y consolida con `make sync-reviews` o exporta a disco con `make export`. Consulta la guía detallada en [Fase 4: Revisión Manual](workflow/4_manual_review.md).
 
 Los datos originales se montan en `/datasets/raw` como solo lectura. Una
 ejecución interrumpida no publica el destino final y puede reanudarse desde sus

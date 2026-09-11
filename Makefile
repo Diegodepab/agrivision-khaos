@@ -1,9 +1,12 @@
-.PHONY: help mock dry-run preflight models gpu-build setup quality deduplicate pipeline app export fix-perms docs clean
+.PHONY: help mock dry-run preflight models gpu-build setup quality deduplicate pipeline balance app export sync-reviews fix-perms docs clean
+
+-include .env
 
 #################################################################################
 # GLOBALS                                                                       #
 #################################################################################
 DOCKER_CMD = docker compose run --rm fiftyone uv run --no-sync
+FIFTYONE_PORT ?= 5151
 WORKERS ?= 4
 DATASET ?= agrivision-dataset
 RAW_DIR ?= /datasets/raw
@@ -19,12 +22,23 @@ ONTOLOGY ?=
 MAX_PHASE_DROP ?= 0.40
 MAX_TOTAL_DROP ?= 0.65
 REQUIRE_GPU ?= 0
+ENABLE_OCR ?=
+SKIP_QUALITY ?= 0
+SKIP_DUPLICATES ?= 0
+SKIP_LABELS ?= 0
+BALANCE_CLASSES ?= 0
+BALANCE_TARGET ?= median
+ALLOW_UNRESOLVED ?= 1
 MOCK_DIR ?= data/mock
 BENCHMARK_DIR ?= /datasets/cache/augmentation-benchmark
 BENCHMARK_ARGS ?=
 BENCHMARK_MANIFEST ?=
 HOST_UID ?= $(shell id -u)
 HOST_GID ?= $(shell id -g)
+
+# Normaliza RAW_DIR para traducir rutas relativas de host (data/raw/...) al montaje
+# de solo lectura dentro del contenedor (/datasets/raw/...)
+CONTAINER_RAW_DIR := $(shell echo '$(RAW_DIR)' | sed -e 's|^\./data/raw|/datasets/raw|' -e 's|^data/raw|/datasets/raw|')
 
 #################################################################################
 # COMMANDS                                                                      #
@@ -34,7 +48,7 @@ HOST_GID ?= $(shell id -g)
 setup:
 	@echo "Levantando base de datos y ejecutando ingesta..."
 	docker compose up -d mongo
-	$(DOCKER_CMD) agrivision-ingest --dataset-name $(DATASET) --raw-dir $(RAW_DIR)
+	$(DOCKER_CMD) agrivision-ingest --dataset-name $(DATASET) --raw-dir $(CONTAINER_RAW_DIR)
 
 ## Genera un dataset diminuto COCO/YOLO/VOC para pruebas locales rápidas
 mock:
@@ -44,7 +58,7 @@ mock:
 dry-run:
 	docker compose run --rm --no-deps fiftyone uv run --no-sync agrivision-pipeline \
 		--dataset $(DATASET) \
-		--raw-dir $(RAW_DIR) \
+		--raw-dir $(CONTAINER_RAW_DIR) \
 		--policy $(POLICY) \
 		--output-formats $(OUTPUT_FORMATS) \
 		--report-dir $(REPORT_DIR) \
@@ -53,7 +67,7 @@ dry-run:
 ## Comprueba almacenamiento, rendimiento, disco, MongoDB y GPU opcional
 preflight:
 	$(DOCKER_CMD) agrivision-preflight \
-		--raw-dir $(RAW_DIR) \
+		--raw-dir $(CONTAINER_RAW_DIR) \
 		--output-dir $(EXPORT_DIR) \
 		--cache-dir $(CACHE_DIR) \
 		--database-uri mongodb://mongo:27017/ \
@@ -93,12 +107,17 @@ augmentation-benchmark:
 		--output-dir "$(BENCHMARK_DIR)" --policy "$(POLICY)" $(BENCHMARK_ARGS) \
 		$(if $(BENCHMARK_MANIFEST),--manifest "$(BENCHMARK_MANIFEST)")
 
+## Equilibra clases minoritarias mediante aumentación de datos sintéticos
+balance:
+	@echo "Equilibrando clases con aumentación sintética..."
+	$(DOCKER_CMD) agrivision-balance --dataset $(DATASET) --strategy $(BALANCE_TARGET)
+
 ## Ejecuta todo el flujo desatendido y genera un reporte HTML
 pipeline:
 	@echo "Lanzando pipeline desatendido quality-first..."
 	$(DOCKER_CMD) agrivision-pipeline \
 		--dataset $(DATASET) \
-		--raw-dir $(RAW_DIR) \
+		--raw-dir $(CONTAINER_RAW_DIR) \
 		--profile $(PROFILE) \
 		--policy $(POLICY) \
 		--workers $(WORKERS) \
@@ -109,9 +128,17 @@ pipeline:
 		--cache-dir $(CACHE_DIR) \
 		--require-read-only \
 		$(if $(filter 1 true yes,$(REQUIRE_GPU)),--require-gpu) \
+		$(if $(filter 1 true yes,$(SKIP_QUALITY)),--skip-quality) \
+		$(if $(filter 1 true yes,$(SKIP_DUPLICATES)),--skip-duplicates) \
+		$(if $(filter 1 true yes,$(SKIP_LABELS)),--skip-labels) \
+		$(if $(filter 0 false no,$(ENABLE_OCR)),--no-enable-ocr) \
+		$(if $(filter 1 true yes,$(ENABLE_OCR)),--enable-ocr) \
+		$(if $(filter 1 true yes,$(BALANCE_CLASSES)),--balance-classes) \
+		$(if $(BALANCE_TARGET),--balance-target $(BALANCE_TARGET)) \
 		$(if $(ONTOLOGY),--ontology-map $(ONTOLOGY)) \
 		--max-phase-drop $(MAX_PHASE_DROP) \
 		--max-total-drop $(MAX_TOTAL_DROP)
+	@$(MAKE) fix-perms
 	@$(MAKE) fix-perms
 
 ## Transfiere la propiedad de los archivos generados del contenedor root al usuario actual
@@ -121,14 +148,20 @@ fix-perms:
 
 ## Levanta la aplicación FiftyOne para explorar los datos
 app:
-	@echo "Levantando FiftyOne App..."
-	DATASET_NAME=$(DATASET) docker compose up -d fiftyone
-	@echo "FiftyOne App disponible en: http://localhost:$${FIFTYONE_PORT:-5151}"
+	@echo "Levantando FiftyOne App para el dataset $(DATASET)..."
+	DATASET_NAME=$(DATASET) docker compose up -d --force-recreate fiftyone
+	@echo "FiftyOne App disponible en: http://localhost:$(FIFTYONE_PORT)"
 
-## Exporta el dataset manualmente después de haber sido validado en la UI
+## Exporta el dataset manualmente tras revisión (HitL) en la UI de FiftyOne
 export:
 	@echo "Exportando dataset validado manualmente (HitL)..."
-	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --output-formats $(OUTPUT_FORMATS) --export-dir $(EXPORT_DIR) --policy $(POLICY)
+	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --output-formats $(OUTPUT_FORMATS) --export-dir $(EXPORT_DIR) --policy $(POLICY) $(if $(filter 1 true yes,$(ALLOW_UNRESOLVED)),--allow-unresolved)
+	@$(MAKE) fix-perms
+
+## Sincroniza las decisiones manuales (tags kept/removed) tomadas en FiftyOne sin re-exportar
+sync-reviews:
+	@echo "Sincronizando decisiones manuales tomadas en FiftyOne..."
+	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --allow-unresolved --sync-only
 	@$(MAKE) fix-perms
 
 ## Levanta la documentación de Zensical

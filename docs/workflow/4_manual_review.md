@@ -1,64 +1,97 @@
 # Fase 4: Revisión Manual (Human-in-the-Loop)
 
-Aunque el pipeline desatendido (`make pipeline`) es extremadamente potente y toma decisiones automáticas basadas en calidad y duplicidad, siempre existirán **casos límite** donde la IA o los algoritmos heurísticos prefieren no destruir datos ante la duda.
+Aunque el pipeline desatendido (`make pipeline`) toma decisiones automáticas basadas en calidad (blur, contraste, smearing) y duplicidad (exacta y semántica), existen **casos límite** donde el sistema prefiere no descartar datos precipitadamente.
 
-Estos casos (por ejemplo, hojas borrosas que son la única copia disponible, o imágenes con aumentación artificial donde falta la foto original) se marcan con la etiqueta `"curation_review"`.
+El dataset se organiza en tres subconjuntos o estados:
+1. **Exportadas (`kept`)**: Muestras que superaron todos los filtros y forman el conjunto limpio exportado (ej. 24,060 muestras).
+2. **En Revisión (`review`)**: Muestras dudosas o casos límite pendientes de confirmación humana (ej. 11,623 muestras).
+3. **Descartadas (`removed`)**: Muestras que no superaron los criterios de calidad o resultaron redundantes (ej. 4,021 muestras).
 
-Esta fase te permite utilizar la interfaz visual de FiftyOne para validar o rechazar estas imágenes manualmente, y generar la exportación final limpia.
+Esta fase permite explorar visualmente cada conjunto en **FiftyOne**, aprobar o descartar casos dudosos, y **recuperar falsos positivos descartados**.
 
 ---
 
-## 1. Lanzar la Interfaz Visual
+## 1. Abrir la Interfaz Visual FiftyOne
 
-Una vez que `make pipeline` haya finalizado, levanta el servicio de interfaz gráfica indicando el nombre de tu dataset:
-
-```bash
-make app DATASET="mi_super_dataset"
-```
-
-Abre tu navegador web y dirígete a [http://localhost:5151](http://localhost:5151), salvo que hayas configurado otro `FIFTYONE_PORT`.
-
-## 2. Filtrar los Casos a Revisar
-
-1. En la barra superior de búsqueda de FiftyOne, haz clic en el icono de **Filtros**.
-2. Despliega la pestaña de **Tags**.
-3. Selecciona la etiqueta `curation_review`.
-4. La cuadrícula de imágenes se actualizará instantáneamente para mostrarte únicamente las fotos dudosas.
-
-*(Opcionalmente, puedes filtrar por `curation.status == "review"` en el menú lateral de la izquierda).*
-
-## 3. Auditar y Cambiar Etiquetas
-
-FiftyOne te permite re-etiquetar imágenes visualmente con un par de clics:
-
-1. Haz clic en la **casilla de verificación** (arriba a la izquierda de cada imagen) para seleccionar las imágenes que has decidido **salvar** o **destruir**. Puedes seleccionar múltiples imágenes a la vez, o usar el selector global para seleccionarlas todas.
-2. En el menú superior (icono de etiqueta 🏷️), haz clic en **Tag samples**.
-3. **Para salvarlas:** Elimina la etiqueta `curation_review` y añade la etiqueta `kept`.
-4. **Para destruirlas:** Elimina la etiqueta `curation_review` y añade la etiqueta `removed`.
-5. Dale a guardar.
-
-Repite este proceso hasta que tu vista filtrada por `curation_review` esté completamente vacía. ¡Felicidades, has curado el dataset manualmente!
-
-## 4. Exportación Definitiva (HitL)
-
-Tus decisiones manuales se guardan en la base de datos temporal, pero necesitamos generar los archivos exportados (COCO, YOLO, imágenes físicas) para usarlos en el entrenamiento de IA.
-
-Vuelve a tu terminal y ejecuta:
+Para iniciar la interfaz interactiva, ejecuta:
 
 ```bash
-make export DATASET="mi_super_dataset"
+make app DATASET="EnfermedadesFrutos"
 ```
 
-### ¿Qué hace este comando?
-- Lee la base de datos de FiftyOne.
-- Sincroniza las etiquetas visuales (`kept`, `removed`) con el motor lógico del dataset.
-- Exige que no quede ninguna muestra con estado `review` sin resolver.
-- Genera el resultado bajo el directorio configurado por `PROCESSED_DATA_HOST_PATH`.
-- Escupe el manifiesto final y formatea los metadatos a COCO y YOLO exclusivamente para las imágenes que sobrevivieron al filtro.
-- Publica el directorio de forma atómica y añade `_SUCCESS`; si alguna exportación
-  falla, conserva un directorio `.incomplete-*` para diagnóstico.
+Abre tu navegador web en:
+👉 **[http://localhost:5151](http://localhost:5151)**
 
-Las relaciones entre imágenes se pueden confirmar o rechazar sin aceptar sus
-estados mediante `--review-file`; consulta la [guía de deduplicación](2_deduplication.md).
-La aprobación `kept` resuelve explícitamente todos los motivos acumulados de la
-muestra, disponibles en `curation.review_reasons`.
+---
+
+## 2. Cómo Ver Cada Conjunto de Imágenes
+
+En la pantalla inicial de FiftyOne verás la totalidad de las imágenes del dataset (las 39,704 muestras). Para ver exactamente cada partición dispones de dos métodos:
+
+### Método 1: Vistas Guardadas (Recomendado - 1 Clic)
+En la parte superior izquierda de la pantalla, justo al lado del nombre del dataset, encontrarás el menú desplegable **Saved Views** (icono de marcador / desplegable):
+* **`01_Exportadas_Kept`**: Carga únicamente las imágenes limpias exportadas (24,060).
+* **`02_En_Revision_Review`**: Carga únicamente las imágenes dudosas pendientes de revisión (11,623).
+* **`03_Descartadas_Removed`**: Carga únicamente las imágenes descartadas (4,021).
+
+### Método 2: Filtro por Barra Lateral
+En el panel lateral izquierdo:
+* Despliega la sección **TAGS**:
+  * Haz clic en `curation_kept` para ver las exportadas.
+  * Haz clic en `curation_review` para ver las que están en revisión.
+  * Haz clic en `curation_removed` para ver las descartadas.
+* O bien despliega **`curation` -> `status`** y selecciona `kept`, `review` o `removed`.
+
+---
+
+## 3. Inspeccionar el Motivo de Cada Decisión
+
+Al hacer clic sobre cualquier imagen de la cuadrícula, se abrirá su vista en detalle:
+* En el panel lateral de la muestra, busca el bloque **`curation`**:
+  * **`reason`**: Razón principal de la decisión (ej. `borderline_blur`, `semantic_duplicate`, `exact_duplicate`).
+  * **`review_reasons`**: Lista detallada de advertencias acumuladas que enviaron la imagen a revisión.
+  * **`quality`**: Valores numéricos calculados (laplacian blur, smearing, ratio de aspecto, etc.).
+
+---
+
+## 4. Cómo Auditar y Tomar Decisiones (HitL)
+
+### A. Aprobar muestras de "En Revisión"
+1. Entra en la vista **`02_En_Revision_Review`** (o activa el tag `curation_review`).
+2. Selecciona las imágenes que consideres válidas (haz clic en el selector/cuadrado en la esquina superior izquierda de cada tarjeta, o pulsa `Espacio`).
+3. Pulsa la tecla **`t`** en tu teclado (o haz clic en el icono de etiqueta 🏷️ en la barra superior).
+4. Escribe el tag: **`kept`** y pulsa **Apply** (o Enter).
+
+### B. Confirmar el descarte de muestras de "En Revisión"
+1. Selecciona las fotos que definitivamente deban ser descartadas.
+2. Pulsa la tecla **`t`** (o icono 🏷️).
+3. Escribe el tag: **`removed`** y pulsa **Apply**.
+
+### C. Recuperar muestras de "Descartadas" (Corregir falsos positivos)
+Si al revisar las descartadas ves imágenes que consideras aprovechables (por ejemplo, una fruta que el algoritmo consideró dudosa):
+1. Entra en la vista **`03_Descartadas_Removed`** (o activa el tag `curation_removed`).
+2. Selecciona la(s) foto(s) que deseas salvar.
+3. Pulsa la tecla **`t`** (o icono 🏷️).
+4. Escribe el tag: **`kept`** y pulsa **Apply**.
+
+> **Nota:** No necesitas borrar manualmente etiquetas anteriores (`curation_review`, `curation_removed`). El sistema se encarga de limpiar automáticamente los tags antiguos y asignar el nuevo estado canónico cuando ejecutes la sincronización.
+
+---
+
+## 5. Aplicar y Persistir las Decisiones
+
+Una vez que hayas terminado tu sesión de etiquetado en FiftyOne:
+
+### Opción A: Sincronizar en FiftyOne sin re-exportar archivos
+Para que FiftyOne actualice su base de datos y recalcule los contadores de las vistas guardadas:
+```bash
+make sync-reviews DATASET="EnfermedadesFrutos"
+```
+
+### Opción B: Exportar el nuevo dataset limpio a disco
+Para generar los formatos definitivos (COCO, YOLO, clasificación por carpetas) incluyendo las muestras aprobadas/recuperadas:
+```bash
+make export DATASET="EnfermedadesFrutos"
+```
+
+El resultado final se generará bajo `/datasets/processed/EnfermedadesFrutos_hitl/<run_id>/` de manera atómica y trazable.

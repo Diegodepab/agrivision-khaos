@@ -71,17 +71,26 @@ data/processed/<tu_dataset>/<timestamp>/
 ```
 Dentro verás subcarpetas estructuradas para `classification` (una carpeta por etiqueta), formatos `coco`, `yolo`, etc., listas para ser conectadas a tu código de entrenamiento.
 
-El directorio solo se publica al terminar todas las exportaciones y contiene un
-marcador `_SUCCESS`. Si el proceso se interrumpe, repite el comando: los
-checkpoints compatibles de ingesta, calidad, deduplicación y etiquetas se
-reanudarán automáticamente. Usa `--no-resume` únicamente cuando quieras ignorar
-el checkpoint actual.
+## 5. Caché por Huella Digital (Fingerprint) y Reanudación
 
-Si los datos están en otra máquina, sigue la [guía de ejecución remota](../remote_execution.md).
+El pipeline calcula una **huella digital SHA-256** combinando el contenido de los datasets crudos, la política de calidad, la ontología y las opciones de balanceo.
 
-## Siguiente Paso: Revisión Human-in-the-Loop
+* **Reanudación automática:** Si se interrumpe un run o si se ejecuta con la misma configuración, el sistema detecta que el run ya está completado y no repite cómputos costosos innecesarios (`Run ya completado para estas fuentes y política`).
+* **Forzar re-ejecución limpia:** Si deseas ignorar la caché previa y ejecutar todo desde cero, añade `RESUME=0`:
+  ```bash
+  make pipeline RESUME=0
+  ```
+* **Configuración cómoda mediante `.env`:**
+  En lugar de pasar argumentos largos por la terminal, puedes definir en tu archivo `.env`:
+  ```ini
+  ONTOLOGY=reports/pipeline/EnfermedadesFrutos/20260910_091726_835690/proposed_ontology.yaml
+  BALANCE_CLASSES=1
+  BALANCE_TARGET=median
+  ```
+  El `Makefile` lee automáticamente el archivo `.env` en cada invocación.
 
-El pipeline automatiza las decisiones de alta confianza. Para no perder
-información crítica, los casos ambiguos se marcan con la etiqueta `review`.
+## 6. Vistas Guardadas en FiftyOne y Siguiente Paso
 
-Para auditar y salvar o rechazar estos casos visualmente antes de enviar el dataset al entrenamiento de IA, dirígete a la [Fase 4: Revisión Manual (HitL)](4_manual_review.md).
+Al concluir el pipeline, se registran automáticamente tres vistas guardadas en FiftyOne (`01_Exportadas_Kept`, `02_En_Revision_Review`, `03_Descartadas_Removed`).
+
+Para auditar visualmente los datos, revisar los casos dudosos o recuperar posibles falsos positivos descartados, consulta la [Fase 4: Revisión Manual (HitL)](4_manual_review.md).

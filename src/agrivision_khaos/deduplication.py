@@ -609,11 +609,25 @@ def apply_stored_decisions(dataset, tag, policy, cache_dir):
         else "review",
     )
     # Validate everything before committing any curation decisions.
+    sample_ids = list(decisions.keys())
+    sample_map = {s.id: s for s in dataset.select(sample_ids)}
+    rep_ids_needed = set()
     for key, decision in decisions.items():
-        sample = dataset[key]
+        sample = sample_map.get(key)
+        if sample is not None and decision.status == "removed":
+            evidence = _sample_value(sample, f"{tag}_evidence") or {}
+            rep_id = evidence.get("representative_id")
+            if rep_id and rep_id not in sample_map:
+                rep_ids_needed.add(rep_id)
+    if rep_ids_needed:
+        for s in dataset.select(list(rep_ids_needed)):
+            sample_map[s.id] = s
+
+    for key, decision in decisions.items():
+        sample = sample_map[key]
         evidence = _sample_value(sample, f"{tag}_evidence") or {}
         if decision.status == "removed":
-            representative = dataset[evidence["representative_id"]]
+            representative = sample_map[evidence["representative_id"]]
             left = cache.describe(representative.filepath)
             right = cache.describe(sample.filepath)
             current = cache.verify(left, right, policy)
@@ -719,7 +733,7 @@ def review_pairs(dataset, instructions):
     dataset.set_values("duplicate_links", links, key_field="id")
     dataset.set_values("duplicate_review_history", review_history, key_field="id")
     for key in decisions:
-        sample = dataset[key]
+        sample = samples[key]
         sample.tags = [tag for tag in sample.tags if not tag.startswith("redundant_")]
         sample.save()
     write_decisions(dataset, decisions, "human_review")

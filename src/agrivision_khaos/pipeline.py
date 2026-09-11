@@ -4,6 +4,7 @@ import argparse
 import base64
 import copy
 import csv
+import difflib
 import hashlib
 import html
 import importlib.util
@@ -30,8 +31,10 @@ from rich.logging import RichHandler
 
 from agrivision_khaos.augmentation import (
     ALGORITHM_VERSION,
+    CONFIRMED_LEVELS,
     EXACT_LEVELS,
     DescriptorCache,
+    candidate_pairs,
     transforms,
 )
 from agrivision_khaos.curation_history import ensure_history, record_transition, snapshot
@@ -43,7 +46,7 @@ from agrivision_khaos.families import (
     relation_groups,
     stable_identity,
 )
-from agrivision_khaos.models import CurationPolicy, QualityPolicy, SourceManifest
+from agrivision_khaos.models import CurationPolicy, DeduplicationPolicy, QualityPolicy, SourceManifest
 from agrivision_khaos.preflight import run_preflight
 from agrivision_khaos.split_audit import audit_visual_splits
 
@@ -517,16 +520,16 @@ def render_duplicate_sections(title: str, sections: list[dict[str, object]]) -> 
             )
             removed_metrics = f"<span class='badge'>blur {format_report_value(removed.get('blur_variance'))}</span> <span class='badge'>res {format_report_value(removed.get('width'))}x{format_report_value(removed.get('height'))}</span>"
             pair_cards.append(
-                '<div class="example-pair" style="display:flex;gap:10px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#ffffff;box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);">'
+                '<div class="example-pair" style="display:flex;gap:12px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#ffffff;box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);">'
                 f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{kept_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:contain;border-radius:8px;">'
                 f'<span class="status-kept" style="display:block;margin-top:8px;font-size:14px;">{kept_state}</span>'
                 f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(kept.get("source_dataset", "")))} | {html.escape(str(kept.get("label", "")))}</small>'
-                f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(kept_filename)}">{html.escape(kept_filename)}</code>'
+                f'<code style="display:block;margin-top:6px;font-size:11px;word-break:break-all;line-height:1.3;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;padding:4px 6px;border-radius:6px;" title="{html.escape(kept_filename)}">{html.escape(kept_filename)}</code>'
                 f'<div style="margin-top:6px;">{kept_metrics}</div></div>'
                 f'<div style="flex:1;overflow:hidden;"><img src="data:image/jpeg;base64,{removed_b64}" alt="" style="width:100%;aspect-ratio:1/1;object-fit:contain;border-radius:8px;">'
                 f'<span class="status-removed" style="display:block;margin-top:8px;font-size:14px;">{removed_state}</span>'
                 f'<small style="display:block;color:#64748b;margin-top:2px;">{html.escape(str(removed.get("source_dataset", "")))} | {html.escape(str(removed.get("label", "")))}</small>'
-                f'<code style="display:block;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{html.escape(removed_filename)}">{html.escape(removed_filename)}</code>'
+                f'<code style="display:block;margin-top:6px;font-size:11px;word-break:break-all;line-height:1.3;background:#f1f5f9;color:#334155;border:1px solid #e2e8f0;padding:4px 6px;border-radius:6px;" title="{html.escape(removed_filename)}">{html.escape(removed_filename)}</code>'
                 f'<div style="margin-top:6px;">{removed_metrics}</div><small>{comparison_note}</small>{full_candidate}</div>'
                 "</div>"
             )
@@ -619,6 +622,117 @@ def render_contamination_matrix(cross_contamination: list[dict[str, object]]) ->
     )
 
 
+def render_ontology_harmonization_section(label_mapping: dict[str, Any]) -> str:
+    if not label_mapping:
+        return ""
+
+    typos = label_mapping.get("typos_and_similar", [])
+    matrix = label_mapping.get("dataset_matrix", [])
+    yaml_text = label_mapping.get("proposed_yaml", "")
+    applied = label_mapping.get("applied", {})
+    
+    total_raw = sum(len(m.get("original_labels", [])) for m in matrix) if matrix else len(applied)
+    total_canonical = len(matrix) if matrix else len(set(applied.values()))
+    cross_dataset_typos = [t for t in typos if t.get("cross_dataset") or t.get("recommended_merge")]
+
+    alerts_html = ""
+    if cross_dataset_typos:
+        rows = []
+        for t in cross_dataset_typos[:25]:
+            left_ds = ", ".join(t.get("left_datasets", [])) or "desconocido"
+            right_ds = ", ".join(t.get("right_datasets", [])) or "desconocido"
+            sim = int(t.get("similarity", 0) * 100)
+            badge_color = "#dc2626" if sim >= 85 else "#d97706"
+            badge_bg = "#fef2f2" if sim >= 85 else "#fffbeb"
+            canon = t.get("suggested_canonical") or "-"
+            
+            rows.append(
+                "<tr>"
+                f"<td><strong>{html.escape(str(t['left']))}</strong><br><small style='color:#64748b;'>{html.escape(str(left_ds))} ({t.get('left_count', 0)} imgs)</small></td>"
+                f"<td><strong>{html.escape(str(t['right']))}</strong><br><small style='color:#64748b;'>{html.escape(str(right_ds))} ({t.get('right_count', 0)} imgs)</small></td>"
+                f"<td><span class='badge' style='background:{badge_bg};color:{badge_color};border-color:{badge_color};font-weight:700;'>{sim}% Similitud</span><br><small style='color:#475569;'>{html.escape(str(t.get('diagnosis', '')))}</small></td>"
+                f"<td><code style='font-weight:700;color:#0369a1;background:#e0f2fe;'>{html.escape(str(canon))}</code></td>"
+                "</tr>"
+            )
+        alerts_html = (
+            "<div style='margin-top: 24px;'>"
+            "<h4 style='margin: 0 0 10px; color: #0f172a; display: flex; align-items: center; gap: 8px;'>"
+            "Posible unificación de etiquetas"
+            "</h4>"
+            "<p style='color: #64748b; font-size: 0.9em; margin-bottom: 12px;'>"
+            "Los datasets combinados utilizan nombres ligeramente distintos para la misma afección o fruto. "
+            "Revisa las sugerencias de unificación a continuación:</p>"
+            "<table><thead><tr>"
+            "<th>Etiqueta A (Dataset)</th><th>Etiqueta B (Dataset)</th><th>Diagnóstico</th><th>Fusión Recomendada</th>"
+            "</tr></thead><tbody>"
+            + "".join(rows) +
+            "</tbody></table></div>"
+        )
+
+    matrix_html = ""
+    if matrix:
+        matrix_rows = []
+        for m in matrix:
+            ds_badges = " ".join(
+                f"<span class='badge' style='background:#f8fafc;border:1px solid #cbd5e1;color:#334155;'><strong>{html.escape(str(ds))}:</strong> {cnt}</span>"
+                for ds, cnt in m.get("datasets", {}).items()
+            )
+            orig_labels = ", ".join(f"<code>{html.escape(str(l))}</code>" for l in m.get("original_labels", []))
+            matrix_rows.append(
+                "<tr>"
+                f"<td><strong style='color:#0f172a;'>{html.escape(str(m['canonical']))}</strong></td>"
+                f"<td class='number-cell' style='font-weight:700;'>{m['total']:,}</td>"
+                f"<td>{ds_badges}</td>"
+                f"<td>{orig_labels}</td>"
+                "</tr>"
+            )
+
+        matrix_html = (
+            "<div style='margin-top: 28px;'>"
+            "<h4 style='margin: 0 0 10px; color: #0f172a;'>Distribución de Clases Canónicas por Dataset de Origen</h4>"
+            "<p style='color: #64748b; font-size: 0.9em; margin-bottom: 12px;'>"
+            "Muestra qué datasets crudos aportan imágenes a cada categoría unificada:</p>"
+            "<table><thead><tr>"
+            "<th>Clase Canónica</th><th class='number-cell'>Total Imágenes</th><th>Datasets de Origen (Muestras)</th><th>Etiquetas Crudas Incluidas</th>"
+            "</tr></thead><tbody>"
+            + "".join(matrix_rows) +
+            "</tbody></table></div>"
+        )
+
+    yaml_html = ""
+    if yaml_text:
+        yaml_html = (
+            "<details style='margin-top: 24px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #ffffff;'>"
+            "<summary style='cursor: pointer; font-weight: 600; color: #0369a1;'>Ver / Copiar archivo de ontología sugerido (<code>proposed_ontology.yaml</code>)</summary>"
+            "<p style='color: #64748b; font-size: 0.9em; margin: 12px 0 8px;'>"
+            "Puedes guardar este contenido en un archivo (ej. <code>configs/ontology.yaml</code>) y pasarlo al pipeline con <code>ONTOLOGY=configs/ontology.yaml</code> para forzar la estandarización exacta de clases."
+            "</p>"
+            f"<pre style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; overflow-x: auto; font-size: 0.85em; color: #1e293b; max-height: 400px;'><code>{html.escape(yaml_text)}</code></pre>"
+            "</details>"
+        )
+
+    return (
+        "<div style='max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);'>"
+        "<h3 style='margin-top: 0; color: #0f172a; display: flex; align-items: center; gap: 8px;'>"
+        "Armonización de Etiquetas y Ontología Multi-Dataset"
+        "</h3>"
+        "<p style='color: #64748b; font-size: 0.95em; margin-bottom: 20px; line-height: 1.5;'>"
+        "Al integrar múltiples datasets agronómicos (YOLO, COCO, Classification), cada autor introduce sus propias convenciones o erratas tipográficas (como <em>Anthracnose</em> vs <em>Athracnose</em>). "
+        "AgriVision Khaos analiza la coherencia inter-dataset para unificar clases y proponer una taxonomía limpia."
+        "</p>"
+        "<div class='stats' style='margin-top: 0; margin-bottom: 20px;'>"
+        f"<div class='stat'><strong>{total_raw}</strong><span>Etiquetas Originales</span></div>"
+        f"<div class='stat'><strong style='color: #0369a1;'>{total_canonical}</strong><span>Clases Canónicas</span></div>"
+        f"<div class='stat'><strong style='color: #d97706;'>{len(cross_dataset_typos)}</strong><span>Alertas Inter-Dataset</span></div>"
+        f"<div class='stat'><strong style='color: #10b981;'>{len(label_mapping.get('automatic', {}))}</strong><span>Agrupadas Automát.</span></div>"
+        "</div>"
+        + alerts_html
+        + matrix_html
+        + yaml_html +
+        "</div>"
+    )
+
+
 def write_reports(
     report_dir: Path,
     dataset_name: str,
@@ -641,25 +755,25 @@ def write_reports(
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     body {{ margin: 0; font-family: 'Inter', system-ui, sans-serif; color: #1e293b; background: #f8fafc; }}
     main {{ max-width: 1280px; margin: 40px auto; padding: 0 24px; }}
-    .hero {{ background: #0f172a; color: white; padding: 40px; border-radius: 16px; margin-bottom: 32px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }}
-    .hero h1 {{ margin: 0 0 8px; font-size: 2.5em; letter-spacing: -0.02em; }}
-    .hero p {{ margin: 0; color: #94a3b8; font-size: 1.1em; }}
+    .hero {{ background: #ffffff; color: #0f172a; padding: 36px; border-radius: 16px; margin-bottom: 32px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }}
+    .hero h1 {{ margin: 0 0 8px; font-size: 2.2em; letter-spacing: -0.02em; color: #0f172a; }}
+    .hero p {{ margin: 0; color: #64748b; font-size: 1.05em; }}
     h2 {{ margin-top: 40px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600; letter-spacing: -0.01em; }}
-    details.reason-group {{ margin: 16px 0; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #ffffff; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); transition: all 0.2s; }}
-    details.reason-group:hover {{ box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }}
+    details.reason-group {{ margin: 16px 0; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; background: #ffffff; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); transition: all 0.2s; }}
+    details.reason-group:hover {{ box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.08); }}
     details.reason-group > summary {{ cursor: pointer; list-style: none; font-weight: 600; color: #334155; }}
     
     .stats {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }}
-    .stat {{ background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; }}
-    .stat strong {{ display: block; font-size: 32px; font-weight: 700; color: white; }}
-    .stat span {{ color: #94a3b8; font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; display: block; }}
+    .stat {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }}
+    .stat strong {{ display: block; font-size: 30px; font-weight: 700; color: #0f172a; }}
+    .stat span {{ color: #64748b; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; display: block; font-weight: 600; }}
     
-    .progress-bar {{ display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 24px; background: #334155; }}
+    .progress-bar {{ display: flex; height: 10px; border-radius: 6px; overflow: hidden; margin-top: 24px; background: #e2e8f0; }}
     .progress-kept {{ background: #10b981; }}
     .progress-review {{ background: #f59e0b; }}
     .progress-removed {{ background: #ef4444; }}
 
-    table {{ width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 16px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); border: 1px solid #e2e8f0; }}
+    table {{ width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 16px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05); border: 1px solid #e2e8f0; }}
     th, td {{ border-bottom: 1px solid #e2e8f0; padding: 12px 16px; text-align: left; }}
     th {{ background: #f8fafc; font-weight: 600; color: #475569; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; }}
     tr:last-child td {{ border-bottom: none; }}
@@ -671,7 +785,7 @@ def write_reports(
     .example span, .example small {{ display: block; color: #64748b; margin-top: 4px; }}
     .example strong {{ color: #0f172a; }}
     
-    code {{ background: rgba(0, 0, 0, 0.3); padding: 4px 8px; border-radius: 6px; font-family: monospace; color: #e2e8f0; font-size: 0.9em; }}
+    code {{ background: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-family: monospace; color: #1e293b; font-size: 0.85em; border: 1px solid #e2e8f0; }}
     .status-kept {{ color: #10b981; font-weight: 600; }}
     .status-removed {{ color: #ef4444; font-weight: 600; }}
     .badge {{ background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; display: inline-block; margin-top: 4px; border: 1px solid #e2e8f0; font-weight: 600; }}
@@ -693,29 +807,77 @@ def write_reports(
     
     <section class="stats">
       <div class="stat"><strong>{summary['counts']['initial']:,}</strong><span>Iniciales</span></div>
-      <div class="stat"><strong style="color: #34d399;">{summary['counts']['kept']:,}</strong><span>Exportadas</span></div>
-      <div class="stat"><strong style="color: #fbbf24;">{summary['counts']['review']:,}</strong><span>En Revisión</span></div>
-      <div class="stat"><strong style="color: #f87171;">{summary['counts']['removed']:,}</strong><span>Descartadas</span></div>
+      <div class="stat"><strong style="color: #059669;">{summary['counts']['kept']:,}</strong><span>Exportadas</span></div>
+      <div class="stat"><strong style="color: #d97706;">{summary['counts']['review']:,}</strong><span>En Revisión</span></div>
+      <div class="stat"><strong style="color: #dc2626;">{summary['counts']['removed']:,}</strong><span>Descartadas</span></div>
     </section>
     
-    <div style="margin-top: 24px; padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
-      <h3 style="margin: 0 0 12px; font-size: 1em; color: white;">Resumen de Fases</h3>
-      <ul style="margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 0.9em; line-height: 1.5;">
+    <div style="margin-top: 24px; padding: 18px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+      <h3 style="margin: 0 0 12px; font-size: 1em; color: #0f172a;">Resumen de Fases</h3>
+      <ul style="margin: 0; padding-left: 20px; color: #334155; font-size: 0.9em; line-height: 1.6;">
         {''.join(
             f"<li><strong>{html.escape(p['name'])}</strong>"
             f"{': ' + str(p['removed']) + ' descartadas | ' + str(p['review']) + ' en revisión | ' + str(p['kept']) + ' conservadas' if (p['removed'] > 0 or p['review'] > 0 or p['kept'] > 0) else ''}"
-            f"<br><span style='color:#94a3b8;'>{'<br>'.join(html.escape(n) for n in p['notes'])}</span></li>"
+            f"<br><span style='color:#64748b;'>{'<br>'.join(html.escape(n) for n in p['notes'])}</span></li>"
             for p in summary["phases"]
         )}
       </ul>
     </div>
   </div>
+
+  <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <h3 style="margin: 0 0 8px; font-size: 1.2em; color: #0f172a;">Próximos Pasos: Exploración y Auditoría en FiftyOne</h3>
+    <p style="margin: 0 0 16px; color: #64748b; font-size: 0.95em;">
+      Para auditar visualmente este conjunto, validar casos en revisión o recuperar posibles falsos positivos descartados:
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+        <strong style="color: #0f172a; font-size: 0.95em;">1. Iniciar la Interfaz Gráfica</strong>
+        <pre style="margin: 8px 0 0; background: #1e293b; color: #f8fafc; padding: 10px; border-radius: 6px; font-size: 0.85em; overflow-x: auto;"><code>make app DATASET="{html.escape(dataset_name)}"</code></pre>
+        <span style="display: block; margin-top: 6px; font-size: 0.85em; color: #64748b;">
+          Abre tu navegador en: <a href="http://localhost:5151" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 600;">http://localhost:5151</a>
+        </span>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+        <strong style="color: #0f172a; font-size: 0.95em;">2. Filtrar por Vistas Guardadas (Top Bar)</strong>
+        <ul style="margin: 8px 0 0; padding-left: 18px; font-size: 0.85em; color: #334155; line-height: 1.6;">
+          <li><strong style="color: #059669;">01_Exportadas_Kept</strong>: Muestras limpias exportadas ({summary['counts']['kept']:,})</li>
+          <li><strong style="color: #d97706;">02_En_Revision_Review</strong>: Muestras dudosas a revisar ({summary['counts']['review']:,})</li>
+          <li><strong style="color: #dc2626;">03_Descartadas_Removed</strong>: Muestras descartadas ({summary['counts']['removed']:,})</li>
+        </ul>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+        <strong style="color: #0f172a; font-size: 0.95em;">3. Toma de Decisiones (HitL)</strong>
+        <p style="margin: 8px 0 0; font-size: 0.85em; color: #334155; line-height: 1.5;">
+          Selecciona muestras y pulsa la tecla <code>t</code>:
+          <br>• Tag <code>kept</code>: Aprobar caso en revisión o <strong>RECUPERAR</strong> muestra descartada.
+          <br>• Tag <code>removed</code>: Confirmar descarte definitivo.
+        </p>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
+        <strong style="color: #0f172a; font-size: 0.95em;">4. Sincronizar o Exportar</strong>
+        <pre style="margin: 8px 0 0; background: #1e293b; color: #f8fafc; padding: 10px; border-radius: 6px; font-size: 0.85em; overflow-x: auto;"><code># Sincronizar en FiftyOne DB:
+make sync-reviews DATASET="{html.escape(dataset_name)}"
+
+# Generar exportación definitiva:
+make export DATASET="{html.escape(dataset_name)}"</code></pre>
+      </div>
+    </div>
+
+    <p style="margin: 0; font-size: 0.85em; color: #64748b;">
+      Documentación completa del proceso: <code>docs/workflow/4_manual_review.md</code>
+    </p>
+  </div>
   
-  <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);">
-    <h3 style="margin-top: 0;">Sugerencia de Balanceo (Class Weights)</h3>
+  <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);">
+    <h3 style="margin-top: 0; color: #0f172a;">Sugerencia de Balanceo (Class Weights)</h3>
     <p style="color: #64748b; font-size: 0.9em; margin-bottom: 16px;">Copia y pega este fragmento en tu código de entrenamiento para penalizar matemáticamente las clases mayoritarias y ayudar a la red a converger de forma equitativa.</p>
-    <div style="background: #0f172a; padding: 16px; border-radius: 8px; overflow-x: auto;">
-      <code style="color: #e2e8f0; background: transparent; font-size: 1em; padding: 0;">
+    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto;">
+      <code style="color: #0f172a; background: transparent; border: none; font-size: 0.95em; padding: 0;">
 class_weights = {{<br>
 {''.join(f"    '{html.escape(cls)}': {weight},<br>" for cls, weight in summary.get('class_weights', {}).items())}
 }}<br><br>
@@ -727,6 +889,8 @@ class_weights = {{<br>
   </div>
 
   {render_contamination_matrix(list(evidence.get('cross_contamination', [])))}
+
+  {render_ontology_harmonization_section(summary.get('label_mapping', {}))}
 
   {render_count_table("Evolucion por dataset origen", summary["groups"]["by_source"], show_drop_rates=True)}
   {render_count_table("Evolucion por etiqueta", summary["groups"]["by_label"])}
@@ -1025,16 +1189,16 @@ def prepare_duplicate_run(dataset: fo.Dataset, method: str | None = None) -> Non
 
 
 def reconcile_duplicate_representatives(dataset: fo.Dataset) -> PhaseResult:
-    samples = {sample.id: sample for sample in dataset}
+    status_map = dict(zip(dataset.values("id"), dataset.values("curation.status")))
+    rep_map = dict(zip(dataset.values("id"), dataset.values("curation.representative_id")))
     decisions = {}
-    for sample in samples.values():
-        curation = sample_field(sample, "curation")
-        representative_id = getattr(curation, "representative_id", "")
-        if current_status(sample) != "removed" or not representative_id:
+    for sample_id, status in status_map.items():
+        representative_id = rep_map.get(sample_id) or ""
+        if status != "removed" or not representative_id:
             continue
-        representative = samples.get(representative_id)
-        if representative is None or current_status(representative) != "kept":
-            decisions[sample.id] = Decision(
+        rep_status = status_map.get(representative_id)
+        if rep_status != "kept":
+            decisions[sample_id] = Decision(
                 "review", "consistency_duplicates", "Representante pendiente de revisión", 0.0,
                 representative_id=representative_id,
             )
@@ -1167,7 +1331,11 @@ def run_duplicate_phases(
     return results
 
 
-def suggest_label_mappings(labels: list[str]) -> dict[str, Any]:
+def suggest_label_mappings(
+    labels: list[str],
+    label_to_sources: dict[str, set[str]] | None = None,
+    label_counts: dict[str, dict[str, int]] | None = None,
+) -> dict[str, Any]:
     normalized_to_sources: dict[str, set[str]] = defaultdict(set)
     for label in labels:
         normalized_to_sources[normalize_label(label)].add(label)
@@ -1178,18 +1346,125 @@ def suggest_label_mappings(labels: list[str]) -> dict[str, Any]:
         if normalized and len(values) > 1
     }
     candidates = []
+    typos_and_similar = []
     normalized_labels = sorted(label for label in normalized_to_sources if label)
+    
+    antonym_prefixes = ("un_", "non_", "partially_", "pre_", "un", "non", "partially")
+
+    known_standard_terms = {
+        "anthracnose", "healthy", "avocado", "powdery_mildew", "leaf_spot",
+        "bacterial_canker", "fruit_rot", "apple", "banana", "orange", "mango",
+        "papaya", "tomato", "chirimoya", "black_spot", "ring_spot", "phytophthora"
+    }
+
+    def _clean_stem(s: str) -> str:
+        res = re.sub(r"(_diease|_disease|_diseases|_dataset|_sin_fondo|_evaluacion|_evaluación|_entrenamiento)$", "", s)
+        return res or s
+
     for index, left in enumerate(normalized_labels):
         for right in normalized_labels[index + 1 :]:
             if left == right:
                 continue
+
+            stem_left = _clean_stem(left)
+            stem_right = _clean_stem(right)
+
+            raw_ratio = difflib.SequenceMatcher(None, left, right).ratio()
+            stem_ratio = difflib.SequenceMatcher(None, stem_left, stem_right).ratio()
+            sm_ratio = max(raw_ratio, stem_ratio)
+
             left_tokens = set(left.split("_"))
             right_tokens = set(right.split("_"))
             overlap = len(left_tokens & right_tokens) / max(len(left_tokens | right_tokens), 1)
+
+            is_lifecycle = any(
+                (left.startswith(p) and right == left[len(p):]) or
+                (right.startswith(p) and left == right[len(p):])
+                for p in antonym_prefixes
+            )
+
             if overlap >= 0.5:
                 candidates.append({"left": left, "right": right, "token_overlap": round(overlap, 3)})
 
-    return {"automatic": automatic, "candidates": candidates}
+            if sm_ratio >= 0.75 or overlap >= 0.5:
+                left_origs = normalized_to_sources[left]
+                right_origs = normalized_to_sources[right]
+                left_ds: set[str] = set()
+                right_ds: set[str] = set()
+                left_count = 0
+                right_count = 0
+
+                if label_to_sources:
+                    for lo in left_origs:
+                        left_ds.update(label_to_sources.get(lo, set()))
+                    for ro in right_origs:
+                        right_ds.update(label_to_sources.get(ro, set()))
+
+                if label_counts:
+                    for lo in left_origs:
+                        left_count += sum(label_counts.get(lo, {}).values())
+                    for ro in right_origs:
+                        right_count += sum(label_counts.get(ro, {}).values())
+
+                cross_dataset = bool(left_ds and right_ds and (left_ds != right_ds))
+
+                if is_lifecycle:
+                    cat = "lifecycle_stage"
+                    diag = "Fases de maduración / Estados opuestos"
+                    rec_merge = False
+                elif sm_ratio >= 0.85 and overlap < 0.5:
+                    cat = "typo_variant"
+                    diag = f"Errata tipográfica inter-dataset ({int(sm_ratio*100)}% similitud)"
+                    rec_merge = True
+                elif sm_ratio >= 0.85:
+                    cat = "exact_variant"
+                    diag = f"Variante cercana ({int(sm_ratio*100)}% similitud)"
+                    rec_merge = True
+                else:
+                    cat = "shared_tokens"
+                    diag = f"Concepto relacionado ({int(overlap*100)}% palabras compartidas)"
+                    rec_merge = False
+
+                if rec_merge:
+                    # Prefer known canonical terms or standard word spelling
+                    if stem_left in known_standard_terms:
+                        suggested_canonical = stem_left
+                    elif stem_right in known_standard_terms:
+                        suggested_canonical = stem_right
+                    elif left in known_standard_terms:
+                        suggested_canonical = left
+                    elif right in known_standard_terms:
+                        suggested_canonical = right
+                    else:
+                        suggested_canonical = left if left_count >= right_count else right
+                else:
+                    suggested_canonical = None
+
+                typos_and_similar.append({
+                    "left": left,
+                    "right": right,
+                    "left_origs": sorted(left_origs),
+                    "right_origs": sorted(right_origs),
+                    "left_datasets": sorted(left_ds),
+                    "right_datasets": sorted(right_ds),
+                    "left_count": left_count,
+                    "right_count": right_count,
+                    "similarity": round(sm_ratio, 2),
+                    "token_overlap": round(overlap, 2),
+                    "category": cat,
+                    "diagnosis": diag,
+                    "recommended_merge": rec_merge,
+                    "suggested_canonical": suggested_canonical,
+                    "cross_dataset": cross_dataset,
+                })
+
+    typos_and_similar.sort(key=lambda x: (-x["similarity"], -x["token_overlap"]))
+
+    return {
+        "automatic": automatic,
+        "candidates": candidates,
+        "typos_and_similar": typos_and_similar,
+    }
 
 
 def load_ontology_mapping(path: str | Path) -> dict[str, str]:
@@ -1232,40 +1507,121 @@ def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str, ontology_map: str |
             "todavía no recibe; usa auto u off"
         )
 
-    labels = sorted(
-        {
-            label
-            for sample_labels in dataset.values("source_labels")
-            for label in (sample_labels or [])
-            if label
-        }
-    )
-    mapping = suggest_label_mappings(labels)
+    # Vectorized fast collection of all labels and dataset associations
+    src_datasets = dataset.values("source_dataset") if hasattr(dataset, "has_sample_field") and dataset.has_sample_field("source_dataset") else []
+    src_labels_list = dataset.values("source_labels") if hasattr(dataset, "has_sample_field") and dataset.has_sample_field("source_labels") else []
+    src_single_labels = dataset.values("source_label") if hasattr(dataset, "has_sample_field") and dataset.has_sample_field("source_label") else []
+    det_labels_list = dataset.values("ground_truth_detections.detections.label") if hasattr(dataset, "has_sample_field") and dataset.has_sample_field("ground_truth_detections") else []
+
+    label_to_sources: dict[str, set[str]] = defaultdict(set)
+    label_counts: dict[str, Counter[str]] = defaultdict(Counter)
+    all_raw_labels: set[str] = set()
+
+    n_samples = len(dataset) if hasattr(dataset, "__len__") else 0
+    for idx in range(n_samples):
+        src = str(src_datasets[idx] if idx < len(src_datasets) and src_datasets[idx] else "unknown")
+        sample_labels: set[str] = set()
+        if idx < len(src_single_labels) and src_single_labels[idx]:
+            sample_labels.add(str(src_single_labels[idx]).strip())
+        if idx < len(src_labels_list) and src_labels_list[idx]:
+            for l in src_labels_list[idx]:
+                if l:
+                    sample_labels.add(str(l).strip())
+        if idx < len(det_labels_list) and det_labels_list[idx]:
+            for l in det_labels_list[idx]:
+                if l:
+                    sample_labels.add(str(l).strip())
+        for l in sample_labels:
+            all_raw_labels.add(l)
+            label_to_sources[l].add(src)
+            label_counts[l][src] += 1
+
+    labels = sorted(all_raw_labels)
+    mapping = suggest_label_mappings(labels, label_to_sources, label_counts)
     result = PhaseResult(name="labels")
     
     automatic_map = {}
     if ontology_map:
         automatic_map = load_ontology_mapping(ontology_map)
         result.notes.append(f"Ontología de usuario aplicada desde {ontology_map}.")
-        
+        mapping["applied"] = dict(sorted(automatic_map.items()))
     else:
-        # Generar proposed ontology
-        proposed = {norm: origs for norm, origs in mapping["automatic"].items()}
-        for label in set(labels):
-            bucket = proposed.setdefault(normalize_label(label), [])
-            if label not in bucket:
-                bucket.append(label)
-                
+        # High confidence typo unification
+        merge_aliases: dict[str, str] = {}
+        for item in mapping.get("typos_and_similar", []):
+            if item.get("recommended_merge") and item.get("suggested_canonical"):
+                canon = item["suggested_canonical"]
+                other = item["right"] if canon == item["left"] else item["left"]
+                if other not in merge_aliases:
+                    merge_aliases[other] = canon
+
+        proposed: dict[str, list[str]] = defaultdict(list)
+        for norm, origs in mapping["automatic"].items():
+            target_key = merge_aliases.get(norm, norm)
+            for o in origs:
+                if o not in proposed[target_key]:
+                    proposed[target_key].append(o)
+
+        for label in labels:
+            norm = normalize_label(label)
+            target_key = merge_aliases.get(norm, norm)
+            if label not in proposed[target_key]:
+                proposed[target_key].append(label)
+
+        yaml_lines = [
+            "# ==============================================================================",
+            "# AGRIVISION-KHAOS: ONTOLOGÍA MULTI-DATASET SUGERIDA",
+            "# ==============================================================================",
+            "# Este archivo unifica las etiquetas de los diferentes datasets integrados,",
+            "# resolviendo diferencias de nombrado, mayúsculas/minúsculas y erratas detectadas.",
+            "#",
+            "# Puedes editar este archivo según tus necesidades y aplicarlo en el pipeline con:",
+            "#   make pipeline ONTOLOGY=reports/pipeline/.../proposed_ontology.yaml",
+            "# o configurando ONTOLOGY=configs/ontology.yaml en tu archivo .env",
+            "# ==============================================================================",
+            "",
+        ]
+        for canonical, orig_list in sorted(proposed.items()):
+            yaml_lines.append(f"{canonical}:")
+            for orig in orig_list:
+                src_info = []
+                for ds, cnt in sorted(label_counts[orig].items()):
+                    src_info.append(f"{ds}: {cnt}")
+                info_str = ", ".join(src_info)
+                norm_o = normalize_label(orig)
+                note = " [Errata/Variante unificada]" if norm_o in merge_aliases else ""
+                yaml_lines.append(f"  - {orig!r}  # {info_str}{note}")
+            yaml_lines.append("")
+
+        proposed_yaml_text = "\n".join(yaml_lines)
         proposed_path = report_dir / "proposed_ontology.yaml"
         with open(proposed_path, "w", encoding="utf-8") as f:
-            f.write("# Sugerencias heurísticas de mapeo (puedes editar y pasar con --ontology-map)\n")
-            yaml.dump(proposed, f, allow_unicode=True, default_flow_style=False)
+            f.write(proposed_yaml_text)
         result.notes.append(f"Archivo de ontología sugerido generado en {proposed_path}.")
-        
+        mapping["proposed_yaml"] = proposed_yaml_text
+
+        # Build dataset class matrix
+        dataset_matrix = []
+        for canonical, orig_list in sorted(proposed.items()):
+            total_samples = 0
+            ds_breakdown = Counter()
+            for orig in orig_list:
+                for ds, cnt in label_counts[orig].items():
+                    ds_breakdown[ds] += cnt
+                    total_samples += cnt
+            dataset_matrix.append({
+                "canonical": canonical,
+                "total": total_samples,
+                "datasets": dict(ds_breakdown),
+                "original_labels": orig_list,
+            })
+        dataset_matrix.sort(key=lambda x: -x["total"])
+        mapping["dataset_matrix"] = dataset_matrix
+
         # Use heuristics
-        for normalized, original_list in mapping["automatic"].items():
-            for original in original_list:
-                automatic_map[original] = normalized
+        for canonical, orig_list in proposed.items():
+            for orig in orig_list:
+                automatic_map[orig] = canonical
 
     mapping["applied"] = dict(sorted(automatic_map.items()))
 
@@ -1530,25 +1886,29 @@ def build_curation_evidence(
 
     duplicate_sections: list[dict[str, object]] = []
     cross_contamination_counts = Counter()
-    
+    sample_to_source = dict(
+        zip(
+            dataset.values("id"),
+            dataset.values("source_dataset") if dataset.has_sample_field("source_dataset") else repeat("unknown"),
+        )
+    )
+
     for result in duplicate_results:
-        # Calculate cross contamination for all pairs
+        # Calculate cross contamination for all pairs without per-sample MongoDB queries
         for kept_id, removed_id in result.duplicate_pairs:
-            try:
-                kept_ds = str(sample_field(dataset[kept_id], "source_dataset", "unknown"))
-                rem_ds = str(sample_field(dataset[removed_id], "source_dataset", "unknown"))
-                if kept_ds != rem_ds:
-                    pair_key = tuple(sorted([kept_ds, rem_ds]))
-                    cross_contamination_counts[pair_key] += 1
-            except Exception:
-                pass
-                
+            kept_ds = str(sample_to_source.get(kept_id, "unknown"))
+            rem_ds = str(sample_to_source.get(removed_id, "unknown"))
+            if kept_ds != rem_ds:
+                pair_key = tuple(sorted([kept_ds, rem_ds]))
+                cross_contamination_counts[pair_key] += 1
+
+        top_ids = [pid for pair in result.duplicate_pairs[:8] for pid in pair]
+        preview_samples = {s.id: s for s in dataset.select(top_ids)} if top_ids else {}
         pairs: list[dict[str, dict[str, object]]] = []
         for kept_id, removed_id in result.duplicate_pairs[:8]:
-            try:
-                kept_sample = dataset[kept_id]
-                removed_sample = dataset[removed_id]
-            except Exception:
+            kept_sample = preview_samples.get(kept_id)
+            removed_sample = preview_samples.get(removed_id)
+            if kept_sample is None or removed_sample is None:
                 continue
             pairs.append(
                 {
@@ -1725,6 +2085,74 @@ def audit_duplicate_representatives(dataset, cache: DescriptorCache | None = Non
                 raise RuntimeError(f"Sustitución obsoleta o incompatible para {sample.id}; repite la detección")
 
 
+def reconcile_visual_splits(
+    paths: dict[str, str],
+    assignments: dict[str, str],
+    dataset: fo.Dataset,
+    policy: DeduplicationPolicy,
+    cache: DescriptorCache,
+    rejected_pairs: Any = (),
+) -> int:
+    """Detects confirmed visual variants crossing splits and unifies their split to prevent data leakage."""
+    audit_policy = policy.model_copy(
+        update={
+            "candidate_neighbors": min(200, policy.candidate_neighbors * 2),
+            "candidate_pool": min(8192, policy.candidate_pool * 2),
+        }
+    )
+    descriptors = {key: cache.describe(path) for key, path in paths.items()}
+    metrics: dict[str, Any] = {}
+    candidates, _ = candidate_pairs(descriptors, audit_policy, metrics)
+    rejected = set(rejected_pairs)
+
+    sample_to_group = {}
+    for sample in dataset.select(list(assignments)):
+        sample_to_group[sample.id] = sample_field(sample, "split_group_id", sample.id)
+
+    group_to_samples = defaultdict(list)
+    for sample_id, group_id in sample_to_group.items():
+        group_to_samples[group_id].append(sample_id)
+
+    split_priority = {"train": 0, "val": 1, "test": 2}
+    reconciled = 0
+
+    for left, right in candidates:
+        if assignments.get(left) == assignments.get(right) or frozenset((left, right)) in rejected:
+            continue
+        if left not in assignments or right not in assignments:
+            continue
+        evidence = cache.verify(descriptors[left], descriptors[right], audit_policy)
+        if evidence["level"] in CONFIRMED_LEVELS:
+            left_group = sample_to_group.get(left, left)
+            right_group = sample_to_group.get(right, right)
+            left_split = assignments[left]
+            right_split = assignments[right]
+            target_split = left_split if split_priority.get(left_split, 9) <= split_priority.get(right_split, 9) else right_split
+
+            all_members = set(group_to_samples[left_group] + group_to_samples[right_group])
+            for member in all_members:
+                assignments[member] = target_split
+
+            merged_members = list(all_members)
+            group_to_samples[left_group] = merged_members
+            group_to_samples[right_group] = merged_members
+
+            reconciled += 1
+            logger.warning(
+                "Fuga visual prevenida: unificando partición para pareja confirmada %s (%s) y %s (%s) en '%s'",
+                left, left_split, right, right_split, target_split
+            )
+
+    if reconciled > 0:
+        for sample in dataset.select(list(assignments)).iter_samples(autosave=True):
+            if sample.id in assignments:
+                split = assignments[sample.id]
+                clean_tags = [t for t in sample.tags if t not in {"train", "val", "test"}]
+                sample.tags = sorted(set(clean_tags + [split]))
+
+    return reconciled
+
+
 def export_clean_dataset(
     dataset: fo.Dataset,
     export_dir: Path,
@@ -1732,6 +2160,9 @@ def export_clean_dataset(
     label_mapping: dict[str, Any],
     summary: dict[str, Any],
     policy: CurationPolicy | None = None,
+    balance_classes: bool = False,
+    balance_target: str = "median",
+    cache_dir: Path | None = None,
 ) -> dict[str, str]:
     policy = policy or CurationPolicy()
     unknown_formats = sorted(set(output_formats) - SUPPORTED_OUTPUT_FORMATS)
@@ -1762,11 +2193,38 @@ def export_clean_dataset(
     with tempfile.TemporaryDirectory(prefix="agrivision-split-audit-") as audit_cache:
         content_cache = DescriptorCache(Path(audit_cache))
         audit_duplicate_representatives(dataset, content_cache)
+        reconciled = reconcile_visual_splits(
+            {sample.id: sample.filepath for sample in audited_samples if sample.id in assigned},
+            assigned,
+            dataset,
+            policy.deduplication,
+            content_cache,
+            human_rejections(audited_samples),
+        )
+        if reconciled > 0:
+            summary["splits"] = dict(Counter(assigned.values()))
+            summary["split_audit"] = audit_assignments(
+                audited_samples, assigned, locations=policy.splits.group_by_location
+            )
         summary["visual_split_audit"] = audit_visual_splits(
             {sample.id: sample.filepath for sample in audited_samples if sample.id in assigned},
             assigned, policy.deduplication, content_cache,
             human_rejections(audited_samples),
         )
+    if balance_classes:
+        from agrivision_khaos.balancing import balance_dataset_classes
+        logger.info("Aplicando balanceo de clases mediante aumentación agronómica...")
+        aug_dir = (cache_dir / "augmented" / dataset.name) if cache_dir else (export_dir / "augmented")
+        balance_res = balance_dataset_classes(
+            dataset,
+            target_strategy=balance_target,
+            output_dir=aug_dir,
+        )
+        summary["class_balancing"] = asdict(balance_res)
+        summary["splits"] = dict(Counter(
+            next((tag for tag in s.tags if tag in {"train", "val", "test"}), "train")
+            for s in dataset if current_status(s) == "kept"
+        ))
     write_json(export_dir / "duplicate_evidence.json", {
         "version": ALGORITHM_VERSION,
         "samples": [{"id": sample.id, "stable_id": stable_identity(sample),
@@ -2048,7 +2506,11 @@ def _execute_pipeline(
 
     cache_dir = Path(args.cache_dir)
     fingerprint = source_fingerprint(raw_dir, {
-        **policy.model_dump(mode="json"), "deduplication_version": ALGORITHM_VERSION,
+        **policy.model_dump(mode="json"),
+        "deduplication_version": ALGORITHM_VERSION,
+        "ontology_map": str(getattr(args, "ontology_map", "") or ""),
+        "balance_classes": bool(getattr(args, "balance_classes", False)),
+        "balance_target": str(getattr(args, "balance_target", "median") or "median"),
     })
     effective_fingerprint = fingerprint
     if not args.resume:
@@ -2072,8 +2534,15 @@ def _execute_pipeline(
             result = checkpoint.data.get("result", {})
             success_marker = Path(str(result.get("success_marker", "")))
             if success_marker.is_file():
-                logger.info("Run ya completado para estas fuentes y política: %s", run_id)
-                logger.info("Resultado: %s", success_marker.parent)
+                logger.info(
+                    "[bold yellow]El pipeline detectó que este dataset ya fue procesado con esta misma configuración y huella de datos (Run: %s).[/bold yellow]",
+                    run_id,
+                )
+                logger.info("  • Resultado previo: %s", success_marker.parent)
+                logger.info("  • Para forzar una re-ejecución limpia: ejecuta con [bold green]RESUME=0[/bold green] (ej. make pipeline RESUME=0)")
+                logger.info("  • Para aplicar ontología o balanceo: define ONTOLOGY y BALANCE_CLASSES en .env o pásalos en el comando:")
+                logger.info("      make pipeline RESUME=0 ONTOLOGY=\"reports/.../proposed_ontology.yaml\" BALANCE_CLASSES=1")
+                logger.info("  • Para explorar las imágenes en FiftyOne: [bold green]make app DATASET=\"%s\"[/bold green]", dataset_name)
                 return
 
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -2141,60 +2610,80 @@ def _execute_pipeline(
                 "ingestion", {"sample_count": len(dataset), "phase": asdict(phase)}
             )
 
-        quality_payload = checkpoint.phase_payload("quality") if args.resume else None
-        if quality_payload is not None and can_resume_dataset:
-            phases.append(_restore_phase(quality_payload["phase"]))
-            logger.info("Checkpoint de métricas de calidad reutilizado.")
-        else:
-            logger.info("Calculando metricas visuales...")
-            compute_dataset_quality(
-                dataset_name=dataset_name,
-                workers=args.workers,
-                enable_ocr=policy.quality.ocr_enabled,
-                ocr_confidence=policy.quality.ocr_confidence,
-                min_valid_size=policy.quality.min_resolution,
-            )
-            dataset = fo.load_dataset(dataset_name)
-            phase = run_quality_phase(
-                dataset,
-                args.max_phase_drop,
-                args.max_total_drop,
-                policy=policy.quality,
-            )
+        effective_enable_ocr = (
+            args.enable_ocr if getattr(args, "enable_ocr", None) is not None
+            else policy.quality.ocr_enabled
+        )
+        if getattr(args, "skip_quality", False):
+            logger.info("Fase de calidad omitida por configuración (--skip-quality).")
+            phase = PhaseResult(name="quality", kept=len(dataset), notes=["Omitida por configuración."])
             phases.append(phase)
-            checkpoint.mark_phase("quality", {"phase": asdict(phase)})
-
-        duplicates_payload = checkpoint.phase_payload("duplicates") if args.resume else None
-        if duplicates_payload is not None and can_resume_dataset:
-            duplicate_results = [
-                _restore_phase(phase) for phase in duplicates_payload["phases"]
-            ]
-            logger.info("Checkpoint de deduplicación reutilizado.")
         else:
-            duplicate_results = run_duplicate_phases(
-                dataset,
-                work_dir=cache_dir / "deduplication" / dataset_name,
-                max_phase_drop=args.max_phase_drop,
-                max_total_drop=args.max_total_drop,
-                policy=policy,
-            )
-            checkpoint.mark_phase(
-                "duplicates", {"phases": [asdict(phase) for phase in duplicate_results]}
-            )
+            quality_payload = checkpoint.phase_payload("quality") if args.resume else None
+            if quality_payload is not None and can_resume_dataset:
+                phases.append(_restore_phase(quality_payload["phase"]))
+                logger.info("Checkpoint de métricas de calidad reutilizado.")
+            else:
+                logger.info("Calculando metricas visuales...")
+                compute_dataset_quality(
+                    dataset_name=dataset_name,
+                    workers=args.workers,
+                    enable_ocr=effective_enable_ocr,
+                    ocr_confidence=policy.quality.ocr_confidence,
+                    min_valid_size=policy.quality.min_resolution,
+                )
+                dataset = fo.load_dataset(dataset_name)
+                phase = run_quality_phase(
+                    dataset,
+                    args.max_phase_drop,
+                    args.max_total_drop,
+                    policy=policy.quality,
+                )
+                phases.append(phase)
+                checkpoint.mark_phase("quality", {"phase": asdict(phase)})
+
+        if getattr(args, "skip_duplicates", False):
+            logger.info("Fase de deduplicación omitida por configuración (--skip-duplicates).")
+            duplicate_results = [
+                PhaseResult(name="duplicates", kept=len(dataset), notes=["Omitida por configuración."])
+            ]
+        else:
+            duplicates_payload = checkpoint.phase_payload("duplicates") if args.resume else None
+            if duplicates_payload is not None and can_resume_dataset:
+                duplicate_results = [
+                    _restore_phase(phase) for phase in duplicates_payload["phases"]
+                ]
+                logger.info("Checkpoint de deduplicación reutilizado.")
+            else:
+                duplicate_results = run_duplicate_phases(
+                    dataset,
+                    work_dir=cache_dir / "deduplication" / dataset_name,
+                    max_phase_drop=args.max_phase_drop,
+                    max_total_drop=args.max_total_drop,
+                    policy=policy,
+                )
+                checkpoint.mark_phase(
+                    "duplicates", {"phases": [asdict(phase) for phase in duplicate_results]}
+                )
         phases.extend(duplicate_results)
 
-        labels_payload = checkpoint.phase_payload("labels") if args.resume else None
-        if labels_payload is not None and can_resume_dataset:
-            label_phase = _restore_phase(labels_payload["phase"])
-            label_mapping = labels_payload["mapping"]
-            logger.info("Checkpoint de ontología/etiquetas reutilizado.")
+        if getattr(args, "skip_labels", False):
+            logger.info("Fase de ontología/etiquetas omitida por configuración (--skip-labels).")
+            label_phase = PhaseResult(name="labels", kept=len(dataset), notes=["Omitida por configuración."])
+            label_mapping = {}
         else:
-            label_phase, label_mapping = run_label_phase(
-                dataset, args.cleanlab_mode, args.ontology_map, report_dir
-            )
-            checkpoint.mark_phase(
-                "labels", {"phase": asdict(label_phase), "mapping": label_mapping}
-            )
+            labels_payload = checkpoint.phase_payload("labels") if args.resume else None
+            if labels_payload is not None and can_resume_dataset:
+                label_phase = _restore_phase(labels_payload["phase"])
+                label_mapping = labels_payload["mapping"]
+                logger.info("Checkpoint de ontología/etiquetas reutilizado.")
+            else:
+                label_phase, label_mapping = run_label_phase(
+                    dataset, args.cleanlab_mode, args.ontology_map, report_dir
+                )
+                checkpoint.mark_phase(
+                    "labels", {"phase": asdict(label_phase), "mapping": label_mapping}
+                )
         phases.append(label_phase)
         phases.append(reconcile_duplicate_representatives(dataset))
 
@@ -2234,6 +2723,9 @@ def _execute_pipeline(
             label_mapping=label_mapping,
             summary=summary,
             policy=policy,
+            balance_classes=getattr(args, "balance_classes", False),
+            balance_target=getattr(args, "balance_target", "median"),
+            cache_dir=cache_dir,
         )
         export_errors = {
             key: value for key, value in exports.items() if key.endswith("_error")
@@ -2261,13 +2753,47 @@ def _execute_pipeline(
             {"export_dir": str(export_dir), "success_marker": str(success_marker)}
         )
 
-        logger.info("=== PIPELINE FINALIZADO ===")
-        logger.info("Reporte HTML: %s", report_dir / "report.html")
-        logger.info("Dataset exportado: %s", export_dir)
+        # Registrar vistas guardadas estándar en FiftyOne para facilitar la navegación
+        try:
+            from agrivision_khaos.export import update_curation_views
+            update_curation_views(dataset)
+        except Exception as exc:
+            logger.warning("No se pudieron registrar las vistas guardadas en FiftyOne: %s", exc)
+
+        n_kept = len(dataset.match(fo.ViewField("curation.status") == "kept"))
+        n_review = len(dataset.match(fo.ViewField("curation.status") == "review"))
+        n_removed = len(dataset.match(fo.ViewField("curation.status") == "removed"))
+
         logger.info("")
-        logger.info("[bold cyan]¡Para explorar visualmente el dataset resultante, ejecuta:[/bold cyan]")
-        logger.info(f"    [bold green]make app DATASET=\"{dataset_name}\"[/bold green]")
-        logger.info("[bold cyan]Y abre el puerto configurado por FIFTYONE_PORT (5151 por defecto).[/bold cyan]")
+        logger.info("[bold green]================================================================================[/bold green]")
+        logger.info("[bold green]                       PIPELINE FINALIZADO CON ÉXITO                            [/bold green]")
+        logger.info("[bold green]================================================================================[/bold green]")
+        logger.info("  • Reporte HTML : [bold cyan]%s[/bold cyan]", report_dir / "report.html")
+        logger.info("  • Exportación  : [bold cyan]%s[/bold cyan]", export_dir)
+        logger.info("")
+        logger.info("[bold cyan]--------------------------------------------------------------------------------[/bold cyan]")
+        logger.info("[bold cyan]               ETAPA SIGUIENTE: EXPLORACIÓN Y AUDITORÍA EN FIFTYONE             [/bold cyan]")
+        logger.info("[bold cyan]--------------------------------------------------------------------------------[/bold cyan]")
+        logger.info("1. [bold white]Iniciar la aplicación visual:[/bold white]")
+        logger.info("   $ [bold green]make app DATASET=\"%s\"[/bold green]  -> Abre tu navegador en [bold cyan]http://localhost:5151[/bold cyan]", dataset_name)
+        logger.info("")
+        logger.info("2. [bold white]Filtrar mediante las Vistas Guardadas (menú superior 'Saved Views'):[/bold white]")
+        logger.info("   • [bold green]01_Exportadas_Kept[/bold green]    : %d imágenes limpias (superaron filtros y fueron exportadas)", n_kept)
+        logger.info("   • [bold yellow]02_En_Revision_Review[/bold yellow]  : %d imágenes dudosas (pendientes de confirmación humana)", n_review)
+        logger.info("   • [bold red]03_Descartadas_Removed[/bold red] : %d imágenes descartadas (duplicados, borrosas, baja calidad)", n_removed)
+        logger.info("")
+        logger.info("3. [bold white]Auditar y tomar decisiones (Human-in-the-Loop):[/bold white]")
+        logger.info("   • Selecciona muestras en FiftyOne y pulsa la tecla [bold cyan]'t'[/bold cyan] (o icono etiqueta 🏷️):")
+        logger.info("     - Tag [bold green]'kept'[/bold green]    -> Aprobar caso dudoso O RECUPERAR falso positivo descartado.")
+        logger.info("     - Tag [bold red]'removed'[/bold red] -> Confirmar descarte de caso dudoso.")
+        logger.info("")
+        logger.info("4. [bold white]Persistir decisiones tomadas en FiftyOne:[/bold white]")
+        logger.info("   • Para guardar en FiftyOne DB sin re-exportar: $ [bold green]make sync-reviews DATASET=\"%s\"[/bold green]", dataset_name)
+        logger.info("   • Para exportar el dataset limpio a disco:     $ [bold green]make export DATASET=\"%s\"[/bold green]", dataset_name)
+        logger.info("")
+        logger.info("  => Guía completa documentada: [bold underline]docs/workflow/4_manual_review.md[/bold underline]")
+        logger.info("[bold green]================================================================================[/bold green]")
+        logger.info("")
 
 
 def main() -> None:
@@ -2303,6 +2829,37 @@ def main() -> None:
         "--dry-run-report",
         default=None,
         help="Ruta opcional del JSON; por defecto se guarda dentro de --report-dir.",
+    )
+    parser.add_argument(
+        "--skip-quality",
+        action="store_true",
+        help="Omite la fase de evaluación de calidad visual.",
+    )
+    parser.add_argument(
+        "--skip-duplicates",
+        action="store_true",
+        help="Omite la fase de detección y resolución de duplicados.",
+    )
+    parser.add_argument(
+        "--skip-labels",
+        action="store_true",
+        help="Omite la fase de auditoría de etiquetas y Cleanlab.",
+    )
+    parser.add_argument(
+        "--enable-ocr",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Activa (--enable-ocr) o desactiva (--no-enable-ocr) explícitamente el filtro OCR.",
+    )
+    parser.add_argument(
+        "--balance-classes",
+        action="store_true",
+        help="Equilibra clases minoritarias mediante aumentación agronómica sintética antes de exportar.",
+    )
+    parser.add_argument(
+        "--balance-target",
+        default="median",
+        help="Estrategia de balanceo de clases: 'median', 'max', 'mean' o número entero de muestras.",
     )
     args = parser.parse_args()
     policy = load_policy(args.policy)

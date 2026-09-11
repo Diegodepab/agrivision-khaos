@@ -335,17 +335,61 @@ def compute_brightness(image_bgr: np.ndarray, mask: np.ndarray | None = None) ->
     }
 
 
-def should_run_ocr(metrics: QualityMetrics) -> bool:
+def has_text_candidate_features(image_bgr: np.ndarray) -> bool:
+    """
+    Filtro morfológico ultra-rápido (<1ms) para descartar imágenes sin características
+    de texto antes de invocar el costoso motor de Tesseract OCR.
+    """
+    h, w = image_bgr.shape[:2]
+    if h < 30 or w < 30:
+        return False
+
+    max_dim = 320
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        thumb = cv2.resize(image_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_NEAREST)
+    else:
+        thumb = image_bgr
+
+    gray = cv2.cvtColor(thumb, cv2.COLOR_BGR2GRAY)
+    grad_x = cv2.Sobel(gray, cv2.CV_16S, 1, 0, ksize=3)
+    abs_grad_x = cv2.convertScaleAbs(grad_x)
+    _, thresh = cv2.threshold(abs_grad_x, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 3))
+    connected = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    th_h, th_w = thumb.shape[:2]
+    min_word_area = 50
+    max_word_area = (th_h * th_w) * 0.40
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < min_word_area or area > max_word_area:
+            continue
+        x, y, cw, ch = cv2.boundingRect(cnt)
+        aspect_ratio = cw / max(1, ch)
+        if 1.4 <= aspect_ratio <= 15.0 and ch >= 6 and cw >= 15:
+            extent = area / (cw * ch)
+            if 0.25 <= extent <= 0.90:
+                return True
+
+    return False
+
+
+def should_run_ocr(metrics: QualityMetrics, image_bgr: np.ndarray | None = None) -> bool:
     if metrics.is_corrupted or metrics.low_resolution:
         return False
 
     if metrics.brightness_p5 is None or metrics.brightness_p95 is None:
         return True
 
-    return not (
-        metrics.brightness_p95 < 24.0
-        or metrics.brightness_p5 > 231.0
-    )
+    if metrics.brightness_p95 < 24.0 or metrics.brightness_p5 > 231.0:
+        return False
+
+    if image_bgr is not None:
+        return has_text_candidate_features(image_bgr)
+
+    return True
 
 
 def prepare_image_for_ocr(image_bgr: np.ndarray) -> np.ndarray:
@@ -504,7 +548,7 @@ def process_image(
         metrics_dict.update(compute_brightness(image.bgr, mask))
         metrics_dict.update(compute_smearing(image.bgr, image.alpha))
         metrics = QualityMetrics(**metrics_dict)
-        if should_run_ocr(metrics):
+        if should_run_ocr(metrics, image.bgr):
             metrics.has_watermark = ocr_engine.has_watermark(image.bgr)
 
         box_blurs = None

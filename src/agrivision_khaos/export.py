@@ -75,12 +75,44 @@ def sync_manual_decisions(
     return {"kept": len(kept_ids), "removed": len(removed_ids), "unresolved": unresolved}
 
 
+def update_curation_views(dataset: fo.Dataset) -> None:
+    """Actualiza o crea las vistas guardadas estándar en FiftyOne para facilitar la navegación y HitL."""
+    try:
+        v_kept = dataset.match(fo.ViewField("curation.status") == "kept")
+        v_review = dataset.match(fo.ViewField("curation.status") == "review")
+        v_removed = dataset.match(fo.ViewField("curation.status") == "removed")
+
+        dataset.save_view("01_Exportadas_Kept", v_kept, overwrite=True)
+        dataset.save_view("02_En_Revision_Review", v_review, overwrite=True)
+        dataset.save_view("03_Descartadas_Removed", v_removed, overwrite=True)
+        logger.info(
+            "Vistas guardadas en FiftyOne actualizadas (Exportadas: %d | En Revisión: %d | Descartadas: %d).",
+            len(v_kept),
+            len(v_review),
+            len(v_removed),
+        )
+    except Exception as exc:
+        logger.warning("No se pudieron registrar las vistas guardadas en FiftyOne: %s", exc)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Exporta el dataset tras una revisión humana (HitL) en FiftyOne.")
     parser.add_argument("--dataset", type=str, required=True, help="Nombre del dataset en FiftyOne.")
     parser.add_argument("--output-formats", type=str, default="coco,yolo", help="Formatos de salida.")
     parser.add_argument("--export-dir", default="/datasets/processed")
     parser.add_argument("--policy", default="configs/quality-first.yaml")
+    parser.add_argument(
+        "--allow-unresolved",
+        action="store_true",
+        default=False,
+        help="Permite exportar aunque queden muestras en revisión (solo se exportan las muestras con estado kept).",
+    )
+    parser.add_argument(
+        "--sync-only",
+        action="store_true",
+        default=False,
+        help="Solo sincroniza las etiquetas manuales de FiftyOne con la base de datos y refresca las vistas guardadas, sin exportar archivos a disco.",
+    )
     args = parser.parse_args()
     try:
         output_formats = parse_output_formats(args.output_formats)
@@ -96,8 +128,17 @@ def main():
     logger.info(f"Dataset '{args.dataset}' cargado. Total de muestras en DB: {len(dataset)}")
 
     logger.info("Sincronizando decisiones manuales (tags) con el estado de curación...")
-    manual_counts = sync_manual_decisions(dataset)
-    logger.info("Decisiones manuales: %s", manual_counts)
+    manual_counts = sync_manual_decisions(
+        dataset, require_all_reviews_resolved=not args.allow_unresolved
+    )
+    logger.info("Decisiones manuales sincronizadas: %s", manual_counts)
+
+    update_curation_views(dataset)
+
+    if args.sync_only:
+        logger.info("\n[bold green]=== SINCRONIZACIÓN DE REVISIÓN MANUAL COMPLETADA ===[/bold green]")
+        logger.info("Las decisiones manuales y las vistas guardadas en FiftyOne han sido actualizadas.")
+        return
 
     # 3. Exportación Final
     run_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")

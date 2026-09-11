@@ -452,3 +452,87 @@ class PipelineRuleTests(TestCase):
                                     blur_variance=float(cv2.Laplacian(gray, cv2.CV_64F).var()))
                 scores.append(dedupe._sample_keep_score(sample))
             self.assertGreater(scores[1], scores[0])
+
+    def test_reconcile_visual_splits_unifies_variants(self):
+        from agrivision_khaos.augmentation import DescriptorCache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            img1 = np.full((100, 100, 3), 150, dtype=np.uint8)
+            img2 = np.full((100, 100, 3), 150, dtype=np.uint8)
+            path1 = root / "img1.png"
+            path2 = root / "img2.png"
+            cv2.imwrite(str(path1), img1)
+            cv2.imwrite(str(path2), img2)
+
+            cache = DescriptorCache(root / "cache")
+            dataset = fo.Dataset()
+            self.addCleanup(lambda: fo.delete_dataset(dataset.name, verbose=False) if fo.dataset_exists(dataset.name) else None)
+
+            s1 = fo.Sample(filepath=str(path1), tags=["train"])
+            s2 = fo.Sample(filepath=str(path2), tags=["test"])
+            dataset.add_samples([s1, s2])
+
+            paths = {s1.id: str(path1), s2.id: str(path2)}
+            assignments = {s1.id: "train", s2.id: "test"}
+
+            reconciled = pipeline.reconcile_visual_splits(
+                paths, assignments, dataset, DeduplicationPolicy(), cache
+            )
+            self.assertEqual(reconciled, 1)
+            self.assertEqual(assignments[s1.id], "train")
+            self.assertEqual(assignments[s2.id], "train")
+            # Verify sample tags were updated
+            dataset.reload()
+            self.assertIn("train", dataset[s2.id].tags)
+            self.assertNotIn("test", dataset[s2.id].tags)
+
+    def test_suggest_label_mappings_detects_cross_dataset_typos(self):
+        labels = ["Anthracnose", "Athracnose", "Anthracanose Diease", "healthy", "mature", "unmature"]
+        label_to_sources = {
+            "Anthracnose": {"DatasetA"},
+            "Athracnose": {"DatasetB"},
+            "Anthracanose Diease": {"DatasetC"},
+            "healthy": {"DatasetA"},
+            "mature": {"DatasetB"},
+            "unmature": {"DatasetB"},
+        }
+        label_counts = {
+            "Anthracnose": {"DatasetA": 300},
+            "Athracnose": {"DatasetB": 1075},
+            "Anthracanose Diease": {"DatasetC": 190},
+            "healthy": {"DatasetA": 500},
+            "mature": {"DatasetB": 100},
+            "unmature": {"DatasetB": 100},
+        }
+        res = pipeline.suggest_label_mappings(labels, label_to_sources, label_counts)
+        typos = res.get("typos_and_similar", [])
+        self.assertGreater(len(typos), 0)
+
+        # Anthracnose vs Athracnose must be detected as recommended typo merge
+        typo_match = next((t for t in typos if set([t["left"], t["right"]]) == {"anthracnose", "athracnose"}), None)
+        self.assertIsNotNone(typo_match)
+        self.assertTrue(typo_match["recommended_merge"])
+        self.assertEqual(typo_match["suggested_canonical"], "anthracnose")
+        self.assertGreaterEqual(typo_match["similarity"], 0.85)
+
+        # mature vs unmature must be classified as lifecycle, not recommended merge
+        mat_match = next((t for t in typos if set([t["left"], t["right"]]) == {"mature", "unmature"}), None)
+        self.assertIsNotNone(mat_match)
+        self.assertFalse(mat_match["recommended_merge"])
+        self.assertEqual(mat_match["category"], "lifecycle_stage")
+
+    def test_update_curation_views(self):
+        from unittest.mock import MagicMock
+        from agrivision_khaos.export import update_curation_views
+
+        mock_ds = MagicMock()
+        update_curation_views(mock_ds)
+        self.assertEqual(mock_ds.save_view.call_count, 3)
+        saved_names = [call[0][0] for call in mock_ds.save_view.call_args_list]
+        self.assertIn("01_Exportadas_Kept", saved_names)
+        self.assertIn("02_En_Revision_Review", saved_names)
+        self.assertIn("03_Descartadas_Removed", saved_names)
+
+
+

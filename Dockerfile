@@ -26,4 +26,4 @@ RUN uv sync --frozen --no-dev --no-install-project --extra "${TORCH_EXTRA}"
 COPY . .
 RUN uv sync --frozen --no-dev --extra "${TORCH_EXTRA}"
 
-CMD ["uv", "run", "--no-sync", "agrivision-quality", "--workers", "4"]
+CMD ["uv", "run", "--no-sync", "agrivision-quality"]

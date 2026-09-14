@@ -7,7 +7,7 @@
 #################################################################################
 DOCKER_CMD = docker compose run --rm fiftyone uv run --no-sync
 FIFTYONE_PORT ?= 5151
-WORKERS ?= 4
+WORKERS ?= $(shell cpus=$$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4); awk -v cpus="$$cpus" 'BEGIN {w=cpus-2; print (w>1?w:1)}')
 DATASET ?= agrivision-dataset
 RAW_DIR ?= /datasets/raw
 METHOD ?= exact
@@ -23,6 +23,7 @@ MAX_PHASE_DROP ?= 0.40
 MAX_TOTAL_DROP ?= 0.65
 REQUIRE_GPU ?= 0
 ENABLE_OCR ?=
+RESUME ?= 1
 SKIP_QUALITY ?= 0
 SKIP_DUPLICATES ?= 0
 SKIP_LABELS ?= 0
@@ -86,7 +87,9 @@ gpu-build:
 ## Ejecuta la batería de métricas de calidad (OCR, Blur, Smearing) (Fase 1)
 quality:
 	@echo "Ejecutando métricas de calidad..."
-	$(DOCKER_CMD) agrivision-quality --dataset $(DATASET) --workers $(WORKERS)
+	$(DOCKER_CMD) agrivision-quality --dataset $(DATASET) --workers $(WORKERS) --policy $(POLICY) \
+		$(if $(filter 0 false no,$(ENABLE_OCR)),--disable-ocr) \
+		$(if $(filter 1 true yes,$(ENABLE_OCR)),--enable-ocr)
 
 ## Ejecuta el motor de deduplicación de imágenes (Fase 2)
 deduplicate:
@@ -127,6 +130,7 @@ pipeline:
 		--report-dir $(REPORT_DIR) \
 		--cache-dir $(CACHE_DIR) \
 		--require-read-only \
+		$(if $(filter 0 false no,$(RESUME)),--no-resume) \
 		$(if $(filter 1 true yes,$(REQUIRE_GPU)),--require-gpu) \
 		$(if $(filter 1 true yes,$(SKIP_QUALITY)),--skip-quality) \
 		$(if $(filter 1 true yes,$(SKIP_DUPLICATES)),--skip-duplicates) \
@@ -138,7 +142,6 @@ pipeline:
 		$(if $(ONTOLOGY),--ontology-map $(ONTOLOGY)) \
 		--max-phase-drop $(MAX_PHASE_DROP) \
 		--max-total-drop $(MAX_TOTAL_DROP)
-	@$(MAKE) fix-perms
 	@$(MAKE) fix-perms
 
 ## Transfiere la propiedad de los archivos generados del contenedor root al usuario actual
@@ -155,13 +158,13 @@ app:
 ## Exporta el dataset manualmente tras revisión (HitL) en la UI de FiftyOne
 export:
 	@echo "Exportando dataset validado manualmente (HitL)..."
-	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --output-formats $(OUTPUT_FORMATS) --export-dir $(EXPORT_DIR) --policy $(POLICY) $(if $(filter 1 true yes,$(ALLOW_UNRESOLVED)),--allow-unresolved)
+	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --output-formats $(OUTPUT_FORMATS) --export-dir $(EXPORT_DIR) --cache-dir $(CACHE_DIR) --policy $(POLICY) $(if $(filter 1 true yes,$(ALLOW_UNRESOLVED)),--allow-unresolved)
 	@$(MAKE) fix-perms
 
 ## Sincroniza las decisiones manuales (tags kept/removed) tomadas en FiftyOne sin re-exportar
 sync-reviews:
 	@echo "Sincronizando decisiones manuales tomadas en FiftyOne..."
-	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --allow-unresolved --sync-only
+	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --cache-dir $(CACHE_DIR) --allow-unresolved --sync-only
 	@$(MAKE) fix-perms
 
 ## Levanta la documentación de Zensical

@@ -63,4 +63,4 @@ jobs:
           python-version: "3.13"
       - run: uv sync --locked
       - name: Run Mongo/FiftyOne integration test
-        run: uv run python -m unittest -v tests.test_integration_pipeline tests.test_augmentation_integration
+        run: uv run python -m unittest -v tests.test_integration_pipeline tests.test_augmentation_integration tests.test_export_integration

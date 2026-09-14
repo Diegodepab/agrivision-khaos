@@ -453,6 +453,37 @@ class PipelineRuleTests(TestCase):
                 scores.append(dedupe._sample_keep_score(sample))
             self.assertGreater(scores[1], scores[0])
 
+    def test_full_resolution_beats_oversharpened_crop(self):
+        original = FakeSample(
+            "original", width=1200, height=800, blur_variance=80, augmentation_padding=0,
+        )
+        crop = FakeSample(
+            "crop", width=600, height=400, blur_variance=2000, augmentation_padding=0,
+        )
+        self.assertGreater(dedupe._sample_keep_score(original), dedupe._sample_keep_score(crop))
+
+    def test_descriptor_resolution_takes_precedence_over_stale_quality_dimensions(self):
+        original = FakeSample(
+            "original", augmentation_width=1200, augmentation_height=800,
+            augmentation_sharpness=80, augmentation_padding=0,
+        )
+        crop = FakeSample(
+            "crop", width=2400, height=1600, augmentation_width=600, augmentation_height=400,
+            augmentation_sharpness=2000, augmentation_padding=0,
+        )
+        self.assertGreater(dedupe._sample_keep_score(original), dedupe._sample_keep_score(crop))
+
+    def test_resolution_falls_back_to_metadata_before_quality_is_computed(self):
+        original = FakeSample(
+            "original", metadata=SimpleNamespace(width=1200, height=800),
+            augmentation_sharpness=80, augmentation_padding=0,
+        )
+        crop = FakeSample(
+            "crop", metadata={"width": 600, "height": 400},
+            augmentation_sharpness=2000, augmentation_padding=0,
+        )
+        self.assertGreater(dedupe._sample_keep_score(original), dedupe._sample_keep_score(crop))
+
     def test_reconcile_visual_splits_unifies_variants(self):
         from agrivision_khaos.augmentation import DescriptorCache
 
@@ -524,6 +555,7 @@ class PipelineRuleTests(TestCase):
 
     def test_update_curation_views(self):
         from unittest.mock import MagicMock
+
         from agrivision_khaos.export import update_curation_views
 
         mock_ds = MagicMock()
@@ -533,6 +565,4 @@ class PipelineRuleTests(TestCase):
         self.assertIn("01_Exportadas_Kept", saved_names)
         self.assertIn("02_En_Revision_Review", saved_names)
         self.assertIn("03_Descartadas_Removed", saved_names)
-
-
 

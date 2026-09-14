@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -11,12 +13,34 @@ from agrivision_khaos.execution import (
     PipelineAlreadyRunning,
     PipelineLock,
     RunCheckpoint,
+    default_workers,
     source_fingerprint,
 )
 from agrivision_khaos.preflight import run_preflight
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_workers_reserve_two_cpus_without_starving_small_machines(self):
+        for cpus, expected in ((16, 14), (4, 2), (2, 1), (1, 1)):
+            with (
+                self.subTest(cpus=cpus),
+                patch("os.process_cpu_count", return_value=cpus, create=True),
+            ):
+                self.assertEqual(default_workers(), expected)
+
+    def test_workers_fall_back_to_affinity_then_cpu_count(self):
+        with (
+            patch("os.process_cpu_count", return_value=None, create=True),
+            patch("os.sched_getaffinity", return_value={0, 1, 2, 3}, create=True),
+        ):
+            self.assertEqual(default_workers(), 2)
+        with (
+            patch("os.process_cpu_count", return_value=None, create=True),
+            patch("os.sched_getaffinity", side_effect=OSError, create=True),
+            patch("os.cpu_count", return_value=None),
+        ):
+            self.assertEqual(default_workers(), 2)
+
     def test_pipeline_lock_rejects_concurrent_owner_and_is_reusable(self):
         with tempfile.TemporaryDirectory() as tmp:
             lock_path = Path(tmp) / "dataset.lock"
@@ -55,6 +79,34 @@ class ExecutionTests(unittest.TestCase):
 
             self.assertNotEqual(first, second)
             self.assertNotEqual(second, policy_changed)
+
+    def test_malformed_checkpoints_start_a_new_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = RunCheckpoint(path, "fingerprint", "old-run")
+            valid = checkpoint.data
+            for payload in (
+                [], None, 1, "broken", {},
+                {**valid, "run_id": None},
+                {**valid, "phases": []},
+                {**valid, "status": []},
+                {**valid, "result": None},
+            ):
+                with self.subTest(payload=payload):
+                    path.write_text(json.dumps(payload))
+                    resumed = RunCheckpoint(path, "fingerprint", "new-run")
+                    self.assertEqual(resumed.run_id, "new-run")
+                    self.assertIsNone(resumed.phase_payload("quality"))
+
+    def test_malformed_phase_payload_is_recomputed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = RunCheckpoint(Path(tmp) / "checkpoint.json", "fingerprint", "run")
+            for payload in (None, [], "broken"):
+                with self.subTest(payload=payload):
+                    checkpoint.data["phases"]["quality"] = {
+                        "status": "completed", "payload": payload,
+                    }
+                    self.assertIsNone(checkpoint.phase_payload("quality"))
 
     def test_cpu_preflight_checks_storage_without_requiring_gpu_or_database(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from agrivision_khaos.augmentation import CONFIRMED_LEVELS, candidate_pairs
 
 
-def audit_visual_splits(paths, assignments, policy, cache, rejected_pairs=()):
+def audit_visual_splits(paths, assignments, policy, cache, rejected_pairs=(), asset_digests=None):
     if set(paths) != set(assignments):
         raise ValueError("La auditoría requiere un split para cada activo exportado")
     descriptors = {key: cache.describe(path) for key, path in paths.items()}
@@ -36,6 +36,8 @@ def audit_visual_splits(paths, assignments, policy, cache, rejected_pairs=()):
         raise RuntimeError(
             f"Fuga visual: {len(confirmed)} parejas confirmadas cruzan splits ({examples}); repite la detección y revisa las familias"
         )
+    if asset_digests is not None:
+        asset_digests.update({key: descriptor.asset for key, descriptor in descriptors.items()})
     return {
         "images": len(paths),
         "cross_split_pairs_checked": checked,

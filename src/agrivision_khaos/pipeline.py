@@ -17,8 +17,10 @@ import shutil
 import tempfile
 import unicodedata
 from collections import Counter, defaultdict
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from itertools import repeat
 from pathlib import Path
 from typing import Any
 
@@ -39,14 +41,30 @@ from agrivision_khaos.augmentation import (
 )
 from agrivision_khaos.curation_history import ensure_history, record_transition, snapshot
 from agrivision_khaos.dry_run import audit_raw_datasets
-from agrivision_khaos.execution import PipelineLock, RunCheckpoint, source_fingerprint
+from agrivision_khaos.execution import (
+    PipelineLock,
+    RunCheckpoint,
+    default_workers,
+    source_fingerprint,
+)
+from agrivision_khaos.export_assets import (
+    EXPORT_ALGORITHM_VERSION,
+    copy_verified_asset,
+    export_filename,
+    link_export_asset,
+)
 from agrivision_khaos.families import (
     audit_assignments,
     human_rejections,
     relation_groups,
     stable_identity,
 )
-from agrivision_khaos.models import CurationPolicy, DeduplicationPolicy, QualityPolicy, SourceManifest
+from agrivision_khaos.models import (
+    CurationPolicy,
+    DeduplicationPolicy,
+    QualityPolicy,
+    SourceManifest,
+)
 from agrivision_khaos.preflight import run_preflight
 from agrivision_khaos.split_audit import audit_visual_splits
 
@@ -677,7 +695,10 @@ def render_ontology_harmonization_section(label_mapping: dict[str, Any]) -> str:
                 f"<span class='badge' style='background:#f8fafc;border:1px solid #cbd5e1;color:#334155;'><strong>{html.escape(str(ds))}:</strong> {cnt}</span>"
                 for ds, cnt in m.get("datasets", {}).items()
             )
-            orig_labels = ", ".join(f"<code>{html.escape(str(l))}</code>" for l in m.get("original_labels", []))
+            orig_labels = ", ".join(
+                f"<code>{html.escape(str(label))}</code>"
+                for label in m.get("original_labels", [])
+            )
             matrix_rows.append(
                 "<tr>"
                 f"<td><strong style='color:#0f172a;'>{html.escape(str(m['canonical']))}</strong></td>"
@@ -1524,17 +1545,17 @@ def run_label_phase(dataset: fo.Dataset, cleanlab_mode: str, ontology_map: str |
         if idx < len(src_single_labels) and src_single_labels[idx]:
             sample_labels.add(str(src_single_labels[idx]).strip())
         if idx < len(src_labels_list) and src_labels_list[idx]:
-            for l in src_labels_list[idx]:
-                if l:
-                    sample_labels.add(str(l).strip())
+            for label in src_labels_list[idx]:
+                if label:
+                    sample_labels.add(str(label).strip())
         if idx < len(det_labels_list) and det_labels_list[idx]:
-            for l in det_labels_list[idx]:
-                if l:
-                    sample_labels.add(str(l).strip())
-        for l in sample_labels:
-            all_raw_labels.add(l)
-            label_to_sources[l].add(src)
-            label_counts[l][src] += 1
+            for label in det_labels_list[idx]:
+                if label:
+                    sample_labels.add(str(label).strip())
+        for label in sample_labels:
+            all_raw_labels.add(label)
+            label_to_sources[label].add(src)
+            label_counts[label][src] += 1
 
     labels = sorted(all_raw_labels)
     mapping = suggest_label_mappings(labels, label_to_sources, label_counts)
@@ -2153,6 +2174,31 @@ def reconcile_visual_splits(
     return reconciled
 
 
+def _snapshot_export_view(view, images_dir: Path):
+    """Point an unsaved view at the copied images without a large ID-to-path mapping."""
+    parts = fo.ViewField("filepath").split("/")[-1].split(".")
+    has_suffix = (
+        (parts.length() > 1)
+        & (parts[-1] != "")
+        & ((parts.length() > 2) | (parts[0] != ""))
+    )
+    suffix = has_suffix.if_else(fo.ViewExpression(".").concat(parts[-1].lower()), "")
+    return view.set_field(
+        "filepath",
+        fo.ViewExpression(str(images_dir.resolve()) + "/").concat(
+            fo.ViewField("_id").to_string(), suffix
+        ),
+    )
+
+
+def _link_view_media(view, directory: Path, statistics: dict):
+    directory.mkdir(parents=True, exist_ok=True)
+    for sample in view.select_fields("filepath"):
+        source = Path(sample.filepath)
+        mode = link_export_asset(source, directory / source.name)
+        statistics[mode] += 1
+
+
 def export_clean_dataset(
     dataset: fo.Dataset,
     export_dir: Path,
@@ -2171,6 +2217,8 @@ def export_clean_dataset(
             "Formatos de salida inválidos: "
             + (", ".join(unknown_formats) if unknown_formats else "lista vacía")
         )
+    if export_dir.exists() and any(export_dir.iterdir()):
+        raise ValueError(f"La exportación requiere un directorio vacío: {export_dir}")
     export_dir.mkdir(parents=True, exist_ok=True)
     images_dir = export_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -2190,7 +2238,15 @@ def export_clean_dataset(
     summary["split_audit"] = audit_assignments(
         audited_samples, assigned, locations=policy.splits.group_by_location
     )
-    with tempfile.TemporaryDirectory(prefix="agrivision-split-audit-") as audit_cache:
+    # DescriptorCache hashes the current bytes even on hits. Persistent reuse avoids
+    # decoding/recomputing descriptors while keeping the content audit fresh.
+    audit_cache_context = (
+        nullcontext(cache_dir / "deduplication" / dataset.name / "augmentation-cache")
+        if cache_dir is not None
+        else tempfile.TemporaryDirectory(prefix="agrivision-split-audit-")
+    )
+    audited_assets = {}
+    with audit_cache_context as audit_cache:
         content_cache = DescriptorCache(Path(audit_cache))
         audit_duplicate_representatives(dataset, content_cache)
         reconciled = reconcile_visual_splits(
@@ -2210,7 +2266,13 @@ def export_clean_dataset(
             {sample.id: sample.filepath for sample in audited_samples if sample.id in assigned},
             assigned, policy.deduplication, content_cache,
             human_rejections(audited_samples),
+            asset_digests=audited_assets,
         )
+        summary["visual_split_audit"]["cache"] = {
+            "descriptor_hits": content_cache.hits,
+            "descriptor_misses": content_cache.misses,
+            "pair_hits": content_cache.pair_hits,
+        }
     if balance_classes:
         from agrivision_khaos.balancing import balance_dataset_classes
         logger.info("Aplicando balanceo de clases mediante aumentación agronómica...")
@@ -2246,43 +2308,78 @@ def export_clean_dataset(
     if not len(clean_view):
         raise RuntimeError("No quedan muestras aprobadas; no se publicará un dataset vacío")
 
-    # Filtrar cajas delimitadoras borrosas en la vista exportada, sin mutar el snapshot.
-    has_detections = bool(
-        clean_view.count_values("ground_truth_detections.detections.label")
-    )
+    # Unknown blur is not evidence that an annotation is unusable.
+    has_detections = dataset.has_sample_field("ground_truth_detections")
+    excluded_detection_ids = []
     if has_detections:
         logger.info(
             "Filtrando bounding boxes con blur_variance < %.2f...",
             policy.quality.min_box_blur,
         )
+        keep_box = (
+            (fo.ViewField("blur_variance") == None)  # noqa: E711 - FiftyOne expression
+            | (fo.ViewField("blur_variance") >= policy.quality.min_box_blur)
+        )
+        box_count = fo.ViewField("ground_truth_detections.detections").if_null([]).length()
+        excluded_detection_ids = (
+            clean_view.match(box_count > 0)
+            .filter_labels("ground_truth_detections", keep_box, only_matches=False)
+            .match(box_count == 0)
+            .values("id")
+        )
         clean_view = clean_view.filter_labels(
             "ground_truth_detections",
-            fo.ViewField("blur_variance") >= policy.quality.min_box_blur,
+            keep_box,
             only_matches=False,
         )
     exports: dict[str, str] = {}
-
-    manifest_rows = []
-    for sample in clean_view:
-        source_path = Path(sample.filepath)
-        short_src = slugify(sample_field(sample, 'source_dataset', 'source'))[:12]
-        safe_name = f"{short_src}_{sample.id}{source_path.suffix.lower()}"
-        target_path = images_dir / safe_name
-        if source_path.exists():
-            shutil.copy2(source_path, target_path)
-        manifest_rows.append(
-            {
+    statistics = {
+        "version": EXPORT_ALGORITHM_VERSION,
+        "manifest_paths": "relative_to_export_root",
+        "images": 0,
+        "image_bytes": 0,
+        "linked": 0,
+        "copied": 0,
+        "classification_images": 0,
+        "detection_images_excluded_after_box_filter": len(excluded_detection_ids),
+        "skipped_formats": {},
+    }
+    summary["export"] = statistics
+    excluded_detection_ids = set(excluded_detection_ids)
+    # Stream the manifests instead of retaining one large dictionary per image.
+    with (
+        (export_dir / "manifest.csv").open("w", newline="", encoding="utf-8") as csv_file,
+        (export_dir / "manifest.jsonl").open("w", encoding="utf-8") as jsonl_file,
+        (export_dir / "checksums.sha256").open("w", encoding="utf-8") as checksums,
+    ):
+        writer = None
+        for sample in clean_view:
+            source_path = Path(sample.filepath)
+            target_path = images_dir / export_filename(sample.id, source_path)
+            digest, size = copy_verified_asset(source_path, target_path, audited_assets.get(sample.id))
+            splits = set(sample.tags) & {"train", "val", "test"}
+            if not splits and sample_field(sample, "is_synthetic", False):
+                splits = {"train"} if sample_field(sample, "split") == "train" else set()
+            if len(splits) != 1:
+                raise RuntimeError(f"La muestra {sample.id} no tiene una partición única")
+            row = {
                 "id": sample.id,
-                "filepath": str(target_path),
+                "filepath": target_path.relative_to(export_dir).as_posix(),
                 "source_path": str(sample_field(sample, "source_path", "")),
                 "source_dataset": str(sample_field(sample, "source_dataset", "")),
                 "source_split": str(sample_field(sample, "source_split", "")),
-                "assigned_split": "train" if "train" in sample.tags else ("val" if "val" in sample.tags else "test"),
+                "assigned_split": next(iter(splits)),
                 "source_label": str(sample_field(sample, "source_label", "")),
                 "normalized_label": str(sample_field(sample, "normalized_label", "")),
                 "task_type": str(sample_field(sample, "task_type", "unlabeled")),
                 "normalized_labels": ",".join(sample_field(sample, "normalized_labels", []) or []),
-                "asset_sha256": str(sample_field(sample, "asset_sha256", "") or ""),
+                "asset_sha256": digest,
+                "size_bytes": size,
+                "detection_exported": (
+                    sample_field(sample, "ground_truth_detections") is not None
+                    and sample.id not in excluded_detection_ids
+                    and bool(set(output_formats) & {"coco", "yolo"})
+                ),
                 "family_id": str(sample_field(sample, "duplicate_family_id", "")),
                 "split_group_id": str(sample_field(sample, "split_group_id", "")),
                 "representative_id": str(getattr(sample_field(sample, "curation"), "representative_id", "")),
@@ -2291,56 +2388,57 @@ def export_clean_dataset(
                 "source_version": str(sample_field(sample, "source_version", "unknown")),
                 "source_license": str(sample_field(sample, "source_license", "unknown")),
             }
-        )
-
-    with (export_dir / "manifest.csv").open("w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(manifest_rows[0]) if manifest_rows else ["id"])
-        writer.writeheader()
-        writer.writerows(manifest_rows)
-
-    with (export_dir / "manifest.jsonl").open("w", encoding="utf-8") as jsonl_file:
-        for row in manifest_rows:
+            if writer is None:
+                writer = csv.DictWriter(csv_file, fieldnames=list(row))
+                writer.writeheader()
+            writer.writerow(row)
             jsonl_file.write(json.dumps(row, ensure_ascii=False) + "\n")
+            checksums.write(f"{digest}  {row['filepath']}\n")
+            statistics["images"] += 1
+            statistics["image_bytes"] += size
+            if "classification" in output_formats and "classification" in row["task_type"].split(","):
+                label = slugify(row["normalized_label"] or "unlabeled")
+                label_dir = export_dir / "classification" / row["assigned_split"] / label
+                mode = link_export_asset(target_path, label_dir / target_path.name)
+                statistics[mode] += 1
+                statistics["classification_images"] += 1
 
     write_json(export_dir / "label_mapping.json", label_mapping)
-    write_json(export_dir / "curation_summary.json", summary)
     exports["manifest"] = str(export_dir)
-
-    try:
-        clean_view.export(
-            export_dir=str(export_dir / "fiftyone"),
-            dataset_type=fo.types.FiftyOneDataset,
-            export_media=True,
-        )
-        exports["fiftyone"] = str(export_dir / "fiftyone")
-    except Exception as exc:
-        exports["fiftyone_error"] = str(exc)
+    # All format exporters read this fixed copy; the original dataset is unchanged.
+    snapshot_view = _snapshot_export_view(clean_view, images_dir)
+    if "fiftyone" in output_formats:
+        try:
+            snapshot_view.export(
+                export_dir=str(export_dir / "fiftyone"),
+                dataset_type=fo.types.FiftyOneDataset,
+                export_media=True,
+            )
+            exports["fiftyone"] = str(export_dir / "fiftyone")
+        except Exception as exc:
+            exports["fiftyone_error"] = str(exc)
 
     if "classification" in output_formats:
-        try:
-            class_dir = export_dir / "classification"
-            class_dir.mkdir(parents=True, exist_ok=True)
-            import os
+        if statistics["classification_images"]:
+            exports["classification"] = str(export_dir / "classification")
+        else:
+            statistics["skipped_formats"]["classification"] = "No hay muestras de clasificación"
 
-            for row in manifest_rows:
-                if "classification" not in row["task_type"].split(","):
-                    continue
-                label = slugify(row["normalized_label"] or "unlabeled")
-                label_dir = class_dir / row["assigned_split"] / label
-                label_dir.mkdir(parents=True, exist_ok=True)
-                target_path = label_dir / Path(row["filepath"]).name
-                if not target_path.exists():
-                    try:
-                        os.link(row["filepath"], target_path)
-                    except OSError:
-                        shutil.copy2(row["filepath"], target_path)
-            exports["classification"] = str(class_dir)
-        except Exception as exc:
-            exports["classification_error"] = str(exc)
+    detection_view = (
+        snapshot_view.exists("ground_truth_detections").exclude(list(excluded_detection_ids))
+        if has_detections else None
+    )
+    detection_count = len(detection_view) if detection_view is not None else 0
+    classes = (
+        sorted(detection_view.distinct("ground_truth_detections.detections.label"))
+        if detection_count else []
+    )
+    for format_name in ("coco", "yolo"):
+        if format_name in output_formats and not detection_count:
+            statistics["skipped_formats"][format_name] = "No hay muestras de detección exportables"
 
-    if "coco" in output_formats and dataset.has_sample_field("ground_truth_detections"):
+    if "coco" in output_formats and detection_count:
         try:
-            detection_view = clean_view.exists("ground_truth_detections")
             for split in ("train", "val", "test"):
                 split_view = detection_view.match_tags(split)
                 if not len(split_view):
@@ -2349,29 +2447,36 @@ def export_clean_dataset(
                     export_dir=str(export_dir / "coco" / split),
                     dataset_type=fo.types.COCODetectionDataset,
                     label_field="ground_truth_detections",
-                    export_media=True,
+                    export_media=False,
+                    classes=classes,
                 )
+                _link_view_media(split_view, export_dir / "coco" / split / "data", statistics)
             exports["coco"] = str(export_dir / "coco")
         except Exception as exc:
             exports["coco_error"] = str(exc)
 
-    if "yolo" in output_formats and dataset.has_sample_field("ground_truth_detections") and hasattr(fo.types, "YOLOv5Dataset"):
+    if "yolo" in output_formats and detection_count:
         try:
-            detection_view = clean_view.exists("ground_truth_detections")
-            classes = sorted(detection_view.distinct("ground_truth_detections.detections.label"))
+            yolo_dir = export_dir / "yolo"
+            yolo_config = {"names": dict(enumerate(classes))}
             for split in ("train", "val", "test"):
                 split_view = detection_view.match_tags(split)
                 if not len(split_view):
                     continue
                 split_view.export(
-                    export_dir=str(export_dir / "yolo" / split),
+                    export_dir=str(yolo_dir),
                     dataset_type=fo.types.YOLOv5Dataset,
                     label_field="ground_truth_detections",
-                    export_media=True,
+                    export_media=False,
                     split=split,
                     classes=classes,
                 )
-            exports["yolo"] = str(export_dir / "yolo")
+                _link_view_media(split_view, yolo_dir / "images" / split, statistics)
+                yolo_config[split] = f"./images/{split}/"
+            (yolo_dir / "dataset.yaml").write_text(
+                yaml.safe_dump(yolo_config, sort_keys=False, allow_unicode=True), encoding="utf-8"
+            )
+            exports["yolo"] = str(yolo_dir)
         except Exception as exc:
             exports["yolo_error"] = str(exc)
 
@@ -2381,7 +2486,7 @@ def export_clean_dataset(
             exports["datumaro_error"] = "FiftyOne no expone DatumaroDataset en esta version."
         else:
             try:
-                clean_view.export(
+                snapshot_view.export(
                     export_dir=str(export_dir / "datumaro"),
                     dataset_type=datumaro_type,
                     export_media=True,
@@ -2390,6 +2495,12 @@ def export_clean_dataset(
             except Exception as exc:
                 exports["datumaro_error"] = str(exc)
 
+    write_json(export_dir / "curation_summary.json", summary)
+    if not any(format_name in exports for format_name in output_formats):
+        errors = {key: value for key, value in exports.items() if key.endswith("_error")}
+        raise RuntimeError(
+            f"No se generó ningún formato solicitado: {errors or statistics['skipped_formats']}"
+        )
     return exports
 
 
@@ -2494,6 +2605,48 @@ def _restore_phase(payload: dict[str, Any]) -> PhaseResult:
     return PhaseResult(**payload)
 
 
+def _pipeline_fingerprint(args, policy: CurationPolicy, raw_dir: Path) -> str:
+    """Identify result-affecting settings, including CLI overrides and ontology content."""
+    from agrivision_khaos.quality import QUALITY_ALGORITHM_VERSION
+
+    configuration = policy.model_dump(mode="json")
+    enable_ocr = getattr(args, "enable_ocr", None)
+    if enable_ocr is not None:
+        configuration["quality"]["ocr_enabled"] = enable_ocr
+    ontology = getattr(args, "ontology_map", None)
+    ontology_identity = None
+    if ontology:
+        ontology_path = Path(ontology).resolve()
+        ontology_identity = {
+            "path": str(ontology_path),
+            "sha256": hashlib.sha256(ontology_path.read_bytes()).hexdigest(),
+        }
+    return source_fingerprint(raw_dir, {
+        **configuration,
+        "quality_version": QUALITY_ALGORITHM_VERSION,
+        "deduplication_version": ALGORITHM_VERSION,
+        "canonical_schema_version": CANONICAL_SCHEMA_VERSION,
+        "export_version": EXPORT_ALGORITHM_VERSION,
+        "ontology_map": ontology_identity,
+        "execution": {
+            "skip_quality": bool(getattr(args, "skip_quality", False)),
+            "skip_duplicates": bool(getattr(args, "skip_duplicates", False)),
+            "skip_labels": bool(getattr(args, "skip_labels", False)),
+            "cleanlab_mode": getattr(args, "cleanlab_mode", "auto"),
+            "max_phase_drop": getattr(args, "max_phase_drop", 0.40),
+            "max_total_drop": getattr(args, "max_total_drop", 0.65),
+            "output_formats": sorted(parse_output_formats(args.output_formats)),
+            "export_dir": str(Path(args.export_dir).resolve()),
+            "report_dir": str(Path(args.report_dir).resolve()),
+            "require_gpu": bool(getattr(args, "require_gpu", False)),
+            "require_read_only": bool(getattr(args, "require_read_only", False)),
+            "minimum_free_gb": getattr(args, "minimum_free_gb", 5.0),
+            "balance_classes": bool(getattr(args, "balance_classes", False)),
+            "balance_target": str(getattr(args, "balance_target", "median") or "median"),
+        },
+    })
+
+
 def _execute_pipeline(
     args: argparse.Namespace,
     policy: CurationPolicy,
@@ -2505,13 +2658,7 @@ def _execute_pipeline(
     from agrivision_khaos.quality import compute_dataset_quality
 
     cache_dir = Path(args.cache_dir)
-    fingerprint = source_fingerprint(raw_dir, {
-        **policy.model_dump(mode="json"),
-        "deduplication_version": ALGORITHM_VERSION,
-        "ontology_map": str(getattr(args, "ontology_map", "") or ""),
-        "balance_classes": bool(getattr(args, "balance_classes", False)),
-        "balance_target": str(getattr(args, "balance_target", "median") or "median"),
-    })
+    fingerprint = _pipeline_fingerprint(args, policy, raw_dir)
     effective_fingerprint = fingerprint
     if not args.resume:
         effective_fingerprint = hashlib.sha256(
@@ -2630,6 +2777,7 @@ def _execute_pipeline(
                     workers=args.workers,
                     enable_ocr=effective_enable_ocr,
                     ocr_confidence=policy.quality.ocr_confidence,
+                    ocr_timeout_seconds=policy.quality.ocr_timeout_seconds,
                     min_valid_size=policy.quality.min_resolution,
                 )
                 dataset = fo.load_dataset(dataset_name)
@@ -2802,7 +2950,7 @@ def main() -> None:
     parser.add_argument("--raw-dir", required=True, help="Directorio con datasets crudos.")
     parser.add_argument("--profile", default="quality-first", choices=["quality-first"])
     parser.add_argument("--policy", default="configs/quality-first.yaml")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=default_workers())
     parser.add_argument("--output-formats", default="coco,yolo,classification")
     parser.add_argument("--cleanlab-mode", default="auto", choices=["auto", "on", "off"])
     parser.add_argument("--export-dir", default="/datasets/processed")

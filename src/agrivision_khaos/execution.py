@@ -11,6 +11,18 @@ from pathlib import Path
 from typing import Any
 
 
+def default_workers() -> int:
+    """Reserve two logical CPUs, honoring process affinity where available."""
+    process_cpu_count = getattr(os, "process_cpu_count", None)
+    cpus = process_cpu_count() if process_cpu_count is not None else None
+    if cpus is None:
+        try:
+            cpus = len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            cpus = os.cpu_count()
+    return max(1, (cpus or 4) - 2)
+
+
 class PipelineAlreadyRunning(RuntimeError):
     pass
 
@@ -111,7 +123,16 @@ class RunCheckpoint:
                 existing = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 existing = {}
-            if existing.get("fingerprint") == fingerprint:
+            if (
+                isinstance(existing, dict)
+                and existing.get("schema_version") == "1.0"
+                and existing.get("fingerprint") == fingerprint
+                and isinstance(existing.get("run_id"), str)
+                and existing["run_id"]
+                and existing.get("status") in ("running", "completed")
+                and isinstance(existing.get("phases"), dict)
+                and isinstance(existing.get("result", {}), dict)
+            ):
                 self.data = existing
 
     @property
@@ -121,7 +142,8 @@ class RunCheckpoint:
     def phase_payload(self, phase: str) -> dict[str, Any] | None:
         payload = self.data.get("phases", {}).get(phase)
         if isinstance(payload, dict) and payload.get("status") == "completed":
-            return payload.get("payload", {})
+            result = payload.get("payload")
+            return result if isinstance(result, dict) else None
         return None
 
     def mark_phase(self, phase: str, payload: dict[str, Any]) -> None:

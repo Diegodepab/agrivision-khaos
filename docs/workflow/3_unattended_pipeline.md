@@ -63,13 +63,38 @@ En este reporte encontrarás:
 
 ## 4. Archivos Resultantes
 Al terminar, el dataset limpio se materializa en el almacenamiento de salida. La
-vista de clasificación reutiliza hard links cuando el sistema de archivos lo
-permite y copia como alternativa; otros formatos pueden copiar sus imágenes:
+exportación copia cada imagen a `images/` y calcula su SHA-256 en la misma
+lectura. COCO, YOLO y clasificación reutilizan estas copias mediante enlaces
+duros cuando el sistema de archivos lo permite, con copia como alternativa:
 
 ```bash
 data/processed/<tu_dataset>/<timestamp>/
 ```
 Dentro verás subcarpetas estructuradas para `classification` (una carpeta por etiqueta), formatos `coco`, `yolo`, etc., listas para ser conectadas a tu código de entrenamiento.
+
+Se generan solo los formatos de `OUTPUT_FORMATS`; `fiftyone` requiere selección
+explícita. Los formatos sin muestras compatibles se registran en
+`curation_summary.json` bajo `export.skipped_formats`. Si ninguno de los formatos
+solicitados puede generarse, la ejecución falla y no publica `_SUCCESS`.
+
+- `manifest.csv` y `manifest.jsonl`: rutas relativas a la raíz exportada, SHA-256,
+  tamaño en bytes, procedencia y partición de cada imagen.
+- `checksums.sha256`: comprobación de las imágenes mediante
+  `sha256sum -c checksums.sha256` desde la raíz publicada.
+- `yolo/dataset.yaml`: una configuración con clases comunes y rutas relativas a
+  `images/train`, `images/val` e `images/test`, para las particiones presentes.
+- `coco/<split>/labels.json`: categorías con los mismos IDs en todas las particiones.
+
+Las rutas de entrenamiento siguen funcionando al mover la carpeta completa.
+Las rutas `source_path` se conservan como procedencia, no como dependencias para
+entrenar. Los enlaces duros comparten contenido entre formatos de esta misma
+exportación; las imágenes originales se copian y quedan independientes.
+
+El filtro de cajas conserva anotaciones sin una medida de nitidez. Si todas las
+cajas de una imagen positiva se descartan por desenfoque, la imagen se excluye de
+COCO/YOLO para evitar convertirla en un negativo falso. Las imágenes anotadas
+originalmente sin objetos se conservan como negativos. `detection_exported` en
+el manifiesto y el resumen de exportación permiten auditar esta selección.
 
 ## 5. Caché por Huella Digital (Fingerprint) y Reanudación
 

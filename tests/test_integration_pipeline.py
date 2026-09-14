@@ -82,6 +82,14 @@ class PipelineIntegrationTests(unittest.TestCase):
                 self.assertEqual(export_dir.stat().st_mode & 0o777, 0o755)
                 first_marker = marker.read_bytes()
                 first_mtime = marker.stat().st_mtime_ns
+                summary = json.loads((export_dir / "curation_summary.json").read_text())
+                audit_cache = summary["visual_split_audit"]["cache"]
+                self.assertGreater(audit_cache["descriptor_hits"], 0)
+                self.assertEqual(audit_cache["descriptor_misses"], 0)
+                for line in (export_dir / "manifest.jsonl").read_text().splitlines():
+                    row = json.loads(line)
+                    self.assertFalse(Path(row["filepath"]).is_absolute())
+                    self.assertTrue((export_dir / row["filepath"]).is_file())
 
                 _execute_pipeline(args, policy, raw, dataset_name, "ignored-new-run-id")
 
@@ -266,6 +274,8 @@ class PipelineIntegrationTests(unittest.TestCase):
                 self.assertEqual(len(dataset), 24)
                 self.assertEqual(sum(summary["splits"].values()), 24)
                 self.assertIn("classification", exports)
+                self.assertNotIn("fiftyone", exports)
+                self.assertFalse((output / "fiftyone").exists())
                 self.assertEqual(len(list((output / "classification").rglob("*.jpg"))), 24)
                 self.assertTrue((output / "manifest.jsonl").is_file())
                 self.assertEqual(

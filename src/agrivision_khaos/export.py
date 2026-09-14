@@ -10,8 +10,13 @@ import fiftyone as fo
 from rich.logging import RichHandler
 
 from agrivision_khaos.curation_history import ensure_history, record_transition, snapshot
-from agrivision_khaos.execution import atomic_write_json
-from agrivision_khaos.pipeline import export_clean_dataset, load_policy, parse_output_formats
+from agrivision_khaos.execution import PipelineLock, atomic_write_json
+from agrivision_khaos.pipeline import (
+    export_clean_dataset,
+    load_policy,
+    parse_output_formats,
+    slugify,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,6 +105,7 @@ def main():
     parser.add_argument("--dataset", type=str, required=True, help="Nombre del dataset en FiftyOne.")
     parser.add_argument("--output-formats", type=str, default="coco,yolo", help="Formatos de salida.")
     parser.add_argument("--export-dir", default="/datasets/processed")
+    parser.add_argument("--cache-dir", type=Path, default=Path("/datasets/cache"))
     parser.add_argument("--policy", default="configs/quality-first.yaml")
     parser.add_argument(
         "--allow-unresolved",
@@ -120,6 +126,11 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
 
+    with PipelineLock(args.cache_dir / "locks" / f"{slugify(args.dataset)}.lock"):
+        _run_export(args, output_formats, policy)
+
+
+def _run_export(args, output_formats, policy):
     if not fo.dataset_exists(args.dataset):
         logger.error(f"[bold red]El dataset '{args.dataset}' no existe en la BD de FiftyOne.[/bold red]")
         raise SystemExit(2)
@@ -183,6 +194,7 @@ def main():
         label_mapping=label_mapping,
         summary=summary,
         policy=policy,
+        cache_dir=args.cache_dir,
     )
     export_errors = {
         key: value for key, value in exports.items() if key.endswith("_error")

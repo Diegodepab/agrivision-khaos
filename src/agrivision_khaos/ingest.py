@@ -466,7 +466,23 @@ def create_unified_dataset(
                     "tags": [config.name],
                 }
                 if config.data_path:
-                    kwargs["data_path"] = config.data_path
+                    data_dir = Path(config.data_path)
+                    # Mapeo resiliente de archivos: resuelve imágenes organizadas en subcarpetas
+                    # o discrepancias leves de espaciado entre XML y archivos (ej. 'Curl (1)' vs 'Curl(1)')
+                    data_map = {}
+                    for root, _, files in os.walk(data_dir):
+                        for f in files:
+                            if Path(f).suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}:
+                                full_p = os.path.join(root, f)
+                                stem = os.path.splitext(f)[0]
+                                data_map[f] = full_p
+                                data_map[stem] = full_p
+                                data_map[stem.replace(" ", "")] = full_p
+                                data_map[f.replace(" ", "")] = full_p
+                                if "(" in stem and " (" not in stem:
+                                    data_map[stem.replace("(", " (")] = full_p
+                                    data_map[f.replace("(", " (")] = full_p
+                    kwargs["data_path"] = data_map if data_map else config.data_path
                 if config.labels_path:
                     kwargs["labels_path"] = config.labels_path
                     

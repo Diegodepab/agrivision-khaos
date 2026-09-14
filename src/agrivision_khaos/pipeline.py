@@ -845,54 +845,7 @@ def write_reports(
       </ul>
     </div>
   </div>
-
-  <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-    <h3 style="margin: 0 0 8px; font-size: 1.2em; color: #0f172a;">Próximos Pasos: Exploración y Auditoría en FiftyOne</h3>
-    <p style="margin: 0 0 16px; color: #64748b; font-size: 0.95em;">
-      Para auditar visualmente este conjunto, validar casos en revisión o recuperar posibles falsos positivos descartados:
-    </p>
-
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-        <strong style="color: #0f172a; font-size: 0.95em;">1. Iniciar la Interfaz Gráfica</strong>
-        <pre style="margin: 8px 0 0; background: #1e293b; color: #f8fafc; padding: 10px; border-radius: 6px; font-size: 0.85em; overflow-x: auto;"><code>make app DATASET="{html.escape(dataset_name)}"</code></pre>
-        <span style="display: block; margin-top: 6px; font-size: 0.85em; color: #64748b;">
-          Abre tu navegador en: <a href="http://localhost:5151" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 600;">http://localhost:5151</a>
-        </span>
-      </div>
-
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-        <strong style="color: #0f172a; font-size: 0.95em;">2. Filtrar por Vistas Guardadas (Top Bar)</strong>
-        <ul style="margin: 8px 0 0; padding-left: 18px; font-size: 0.85em; color: #334155; line-height: 1.6;">
-          <li><strong style="color: #059669;">01_Exportadas_Kept</strong>: Muestras limpias exportadas ({summary['counts']['kept']:,})</li>
-          <li><strong style="color: #d97706;">02_En_Revision_Review</strong>: Muestras dudosas a revisar ({summary['counts']['review']:,})</li>
-          <li><strong style="color: #dc2626;">03_Descartadas_Removed</strong>: Muestras descartadas ({summary['counts']['removed']:,})</li>
-        </ul>
-      </div>
-
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-        <strong style="color: #0f172a; font-size: 0.95em;">3. Toma de Decisiones (HitL)</strong>
-        <p style="margin: 8px 0 0; font-size: 0.85em; color: #334155; line-height: 1.5;">
-          Selecciona muestras y pulsa la tecla <code>t</code>:
-          <br>• Tag <code>kept</code>: Aprobar caso en revisión o <strong>RECUPERAR</strong> muestra descartada.
-          <br>• Tag <code>removed</code>: Confirmar descarte definitivo.
-        </p>
-      </div>
-
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
-        <strong style="color: #0f172a; font-size: 0.95em;">4. Sincronizar o Exportar</strong>
-        <pre style="margin: 8px 0 0; background: #1e293b; color: #f8fafc; padding: 10px; border-radius: 6px; font-size: 0.85em; overflow-x: auto;"><code># Sincronizar en FiftyOne DB:
-make sync-reviews DATASET="{html.escape(dataset_name)}"
-
-# Generar exportación definitiva:
-make export DATASET="{html.escape(dataset_name)}"</code></pre>
-      </div>
-    </div>
-
-    <p style="margin: 0; font-size: 0.85em; color: #64748b;">
-      Documentación completa del proceso: <code>docs/workflow/4_manual_review.md</code>
-    </p>
-  </div>
+  
   
   <div style="max-width: 1280px; margin: 0 auto 32px; background: #ffffff; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05);">
     <h3 style="margin-top: 0; color: #0f172a;">Sugerencia de Balanceo (Class Weights)</h3>

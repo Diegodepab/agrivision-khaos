@@ -95,3 +95,13 @@ make export DATASET="EnfermedadesFrutos"
 ```
 
 El resultado final se generará bajo `/datasets/processed/EnfermedadesFrutos_hitl/<run_id>/` de manera atómica y trazable.
+
+Puedes seleccionar formatos con `OUTPUT_FORMATS=classification` o
+`OUTPUT_FORMATS=coco,yolo`. Para incluir el archivo completo de FiftyOne, añade
+`fiftyone` explícitamente. Los manifiestos y el YAML de YOLO usan rutas relativas;
+la carpeta completa se puede trasladar a otra máquina. Comprueba sus imágenes
+ejecutando `sha256sum -c checksums.sha256` desde la raíz exportada.
+
+`make export` y `make sync-reviews` usan el mismo bloqueo por dataset que el
+pipeline. Si cambias `CACHE_DIR`, conserva ese valor en todos los comandos.
+Una ejecución concurrente se rechaza antes de sincronizar o cambiar el dataset.

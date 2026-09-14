@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
-import os
+import math
 import shutil
 import sys
 import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from itertools import repeat
 from pathlib import Path
@@ -18,13 +19,14 @@ import fiftyone as fo
 import numpy as np
 from tqdm import tqdm
 
+from agrivision_khaos.execution import default_workers
+
 try:
     import pytesseract
-    from pytesseract import Output, TesseractError
+    from pytesseract import Output
 except ImportError:  # pragma: no cover - depende del entorno local
     pytesseract = None
     Output = None
-    TesseractError = RuntimeError
 
 
 from rich.logging import RichHandler
@@ -43,6 +45,7 @@ LOW_BRIGHTNESS_PERCENTILE = 5
 HIGH_BRIGHTNESS_PERCENTILE = 95
 BATCH_UPDATE_SIZE = 10_000
 DEFAULT_MAX_PENDING_FACTOR = 4
+QUALITY_ALGORITHM_VERSION = "quality-v2"
 
 # Bandas finas capturan bordes clonados/estirados sin contaminarse demasiado con la hoja.
 SMEAR_BORDER_FRACTION = 0.06
@@ -59,6 +62,7 @@ OCR_MIN_CONFIDENCE = 60.0
 OCR_MIN_WORD_LENGTH = 3
 OCR_MAX_SIDE = 1280
 OCR_LANG = "eng"
+OCR_TIMEOUT_SECONDS = 30.0
 
 
 QUALITY_FIELD_SCHEMA = {
@@ -125,7 +129,12 @@ class OcrEngine:
         min_confidence: float = OCR_MIN_CONFIDENCE,
         lang: str = OCR_LANG,
         max_workers: int = 4,
+        timeout_seconds: float = OCR_TIMEOUT_SECONDS,
     ) -> None:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("El tiempo máximo de OCR debe ser positivo y finito.")
+        if max_workers < 1:
+            raise ValueError("El número de workers OCR debe ser al menos 1.")
         backend_available = self._backend_available() if enabled else False
         if enabled and not backend_available:
             raise RuntimeError(
@@ -134,6 +143,7 @@ class OcrEngine:
         self.enabled = enabled
         self.min_confidence = min_confidence
         self.lang = lang
+        self.timeout_seconds = timeout_seconds
         self._semaphore = threading.Semaphore(max_workers)
         self._warned_unavailable = False
 
@@ -165,8 +175,9 @@ class OcrEngine:
                     lang=self.lang,
                     config="--psm 11",
                     output_type=Output.DICT,
+                    timeout=self.timeout_seconds,
                 )
-        except (TesseractError, OSError) as exc:
+        except (RuntimeError, OSError) as exc:
             if not self._warned_unavailable:
                 logger.warning(
                     "OCR no disponible o mal configurado (%s); la muestra pasará a revisión.",
@@ -268,30 +279,38 @@ def compute_resolution(
 
 
 def get_leaf_mask(image_bgr: np.ndarray) -> np.ndarray | None:
-    """Extrae una máscara que aísla la hoja del fondo usando Otsu en saturación y brillo."""
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    """Estimate foliage using green dominance, then saturation and brightness."""
+    def plausible(mask: np.ndarray) -> bool:
+        return 0.05 <= cv2.countNonZero(mask) / mask.size <= 0.95
+
+    # Signed arithmetic avoids uint8 overflow; green dominance rejects yellow/brown soil.
+    b, g, r = cv2.split(image_bgr.astype(np.int16))
+    vegetation = ((2 * g - r - b > 10) & (g > r) & (g > b)).astype(np.uint8) * 255
+    if plausible(vegetation):
+        # Keep enclosed non-green lesions when measuring the leaf's blur and exposure.
+        contours, _ = cv2.findContours(vegetation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(vegetation, contours, -1, 255, cv2.FILLED)
+        if plausible(vegetation):
+            return vegetation
+
+    # Senescent or diseased leaves may contain no green at all.
     hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    saturation = hsv[:, :, 1]
-    
-    try:
-        _, mask = cv2.threshold(saturation, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    except Exception:
-        mask = None
-        
-    if mask is not None:
-        mask_ratio = np.sum(mask > 0) / mask.size
-        if mask_ratio < 0.05 or mask_ratio > 0.95:
-            try:
-                _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            except Exception:
-                mask = None
-    return mask
+    _, mask = cv2.threshold(hsv[:, :, 1], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if plausible(mask):
+        return mask
+
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    border = np.concatenate((mask[0], mask[-1], mask[1:-1, 0], mask[1:-1, -1]))
+    if np.count_nonzero(border) > border.size / 2:
+        mask = cv2.bitwise_not(mask)
+    return mask if plausible(mask) else None
 
 
 def compute_blur(image_bgr: np.ndarray, mask: np.ndarray | None = None) -> dict[str, float]:
     """
     Calcula la varianza del Laplaciano sobre la imagen o el recorte.
-    Utiliza la máscara de Otsu para aislar la hoja del fondo y no penalizar bordes lisos artificiales.
+    Utiliza la máscara foliar para aislar la hoja del fondo.
     """
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     laplacian = cv2.Laplacian(gray, cv2.CV_64F)
@@ -311,8 +330,9 @@ def compute_brightness(image_bgr: np.ndarray, mask: np.ndarray | None = None) ->
     Si se proporciona una máscara, calcula las métricas únicamente sobre los píxeles
     de biomasa, ignorando fondos artificiales puros.
     """
-    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    v_channel = hsv[:, :, 2]
+    # HSV-V is exactly max(B, G, R); avoid computing unused hue and saturation.
+    b, g, r = cv2.split(image_bgr)
+    v_channel = cv2.max(cv2.max(b, g), r)
 
     if mask is not None and np.any(mask > 0):
         v_channel = v_channel[mask > 0]
@@ -548,7 +568,7 @@ def process_image(
         metrics_dict.update(compute_brightness(image.bgr, mask))
         metrics_dict.update(compute_smearing(image.bgr, image.alpha))
         metrics = QualityMetrics(**metrics_dict)
-        if should_run_ocr(metrics, image.bgr):
+        if ocr_engine.enabled and should_run_ocr(metrics, image.bgr):
             metrics.has_watermark = ocr_engine.has_watermark(image.bgr)
 
         box_blurs = None
@@ -657,6 +677,17 @@ def bounded_parallel_map(
             yield future.result()
 
 
+@contextmanager
+def _opencv_worker_threads():
+    """Let the image executor own parallelism, restoring OpenCV even on failure."""
+    previous_threads = cv2.getNumThreads()
+    cv2.setNumThreads(1)
+    try:
+        yield
+    finally:
+        cv2.setNumThreads(previous_threads)
+
+
 def compute_dataset_quality(
     dataset_name: str,
     workers: int,
@@ -665,6 +696,7 @@ def compute_dataset_quality(
     max_pending: int | None = None,
     ocr_workers: int = 4,
     min_valid_size: int = MIN_VALID_SIZE,
+    ocr_timeout_seconds: float = OCR_TIMEOUT_SECONDS,
 ) -> None:
     """
     Orquestador principal.
@@ -674,6 +706,12 @@ def compute_dataset_quality(
     """
     if workers < 1:
         raise ValueError("El número de workers debe ser al menos 1.")
+    if ocr_workers < 1:
+        raise ValueError("El número de workers OCR debe ser al menos 1.")
+    if max_pending is not None and max_pending < 1:
+        raise ValueError("El máximo de imágenes pendientes debe ser al menos 1.")
+    if not math.isfinite(ocr_timeout_seconds) or ocr_timeout_seconds <= 0:
+        raise ValueError("El tiempo máximo de OCR debe ser positivo y finito.")
 
     if not fo.dataset_exists(dataset_name):
         logger.error("El dataset '%s' no se encuentra en el sistema.", dataset_name)
@@ -707,7 +745,8 @@ def compute_dataset_quality(
     ocr_engine = OcrEngine(
         enabled=enable_ocr, 
         min_confidence=ocr_confidence, 
-        max_workers=ocr_workers
+        max_workers=ocr_workers,
+        timeout_seconds=ocr_timeout_seconds,
     )
     if ocr_engine.enabled:
         logger.info("OCR activado para detección de texto/marcas de agua.")
@@ -733,7 +772,7 @@ def compute_dataset_quality(
     flat_batches = {field.name: {} for field in fields(QualityMetrics)}
     box_blur_batch = {}
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
+    with _opencv_worker_threads(), ThreadPoolExecutor(max_workers=workers) as executor:
         results = bounded_parallel_map(executor, tasks, ocr_engine, max_pending)
 
         for sample_id, metrics, box_blurs in tqdm(
@@ -853,29 +892,45 @@ def main() -> None:
         help="Nombre del dataset en FiftyOne.",
     )
 
-    default_workers = min(8, os.cpu_count() or 1)
+    worker_count = default_workers()
     parser.add_argument(
         "--workers",
         type=int,
-        default=default_workers,
+        default=worker_count,
         help=(
             "Número de hilos en paralelo "
-            f"(por defecto: min(8, cpus) -> {default_workers})."
+            f"(por defecto: CPU disponibles menos 2, mínimo 1 -> {worker_count})."
         ),
     )
-    parser.add_argument(
+    parser.add_argument("--policy", default="configs/quality-first.yaml")
+    ocr_options = parser.add_mutually_exclusive_group()
+    ocr_options.add_argument(
+        "--enable-ocr",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Activa o desactiva OCR; por defecto usa quality.ocr_enabled de la política.",
+    )
+    ocr_options.add_argument(
         "--disable-ocr",
-        action="store_true",
+        dest="enable_ocr",
+        action="store_false",
+        default=None,
         help="Desactiva la detección OCR de marcas de agua.",
     )
     parser.add_argument(
         "--ocr-confidence",
         type=float,
-        default=OCR_MIN_CONFIDENCE,
+        default=None,
         help=(
             "Confianza mínima OCR para activar has_watermark "
-            f"(por defecto: {OCR_MIN_CONFIDENCE})."
+            "(por defecto: quality.ocr_confidence de la política)."
         ),
+    )
+    parser.add_argument(
+        "--ocr-timeout",
+        type=float,
+        default=None,
+        help="Tiempo máximo de Tesseract por imagen, en segundos; por defecto usa la política.",
     )
     parser.add_argument(
         "--max-pending",
@@ -889,7 +944,7 @@ def main() -> None:
         default=4,
         help="Número máximo de procesos Tesseract simultáneos (por defecto: 4).",
     )
-    parser.add_argument("--min-resolution", type=int, default=MIN_VALID_SIZE)
+    parser.add_argument("--min-resolution", type=int, default=None)
     parser.add_argument(
         "--repair-schema-only",
         action="store_true",
@@ -901,14 +956,24 @@ def main() -> None:
         repair_quality_schema(args.dataset)
         return
 
+    from agrivision_khaos.pipeline import load_policy
+
+    policy = load_policy(args.policy).quality
     compute_dataset_quality(
         dataset_name=args.dataset,
         workers=args.workers,
-        enable_ocr=not args.disable_ocr,
-        ocr_confidence=args.ocr_confidence,
+        enable_ocr=policy.ocr_enabled if args.enable_ocr is None else args.enable_ocr,
+        ocr_confidence=(
+            policy.ocr_confidence if args.ocr_confidence is None else args.ocr_confidence
+        ),
         max_pending=args.max_pending,
         ocr_workers=args.ocr_workers,
-        min_valid_size=args.min_resolution,
+        ocr_timeout_seconds=(
+            policy.ocr_timeout_seconds if args.ocr_timeout is None else args.ocr_timeout
+        ),
+        min_valid_size=(
+            policy.min_resolution if args.min_resolution is None else args.min_resolution
+        ),
     )
 
 

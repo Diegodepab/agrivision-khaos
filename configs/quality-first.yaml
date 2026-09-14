@@ -1,8 +1,9 @@
 schema_version: "1.0"
 quality:
   min_resolution: 224
-  ocr_enabled: true
+  ocr_enabled: false  # Opt-in con ENABLE_OCR=1 en CPU.
   ocr_confidence: 60.0
+  ocr_timeout_seconds: 30.0
   severe_blur: 15.0
   review_blur: 25.0
   min_brightness: 18.0
@@ -12,16 +13,16 @@ quality:
   min_box_blur: 150.0
 deduplication:
   exact_enabled: true
-  semantic_enabled: true
+  semantic_enabled: false  # pHash, color y geometría no necesitan embeddings.
   augmentation_enabled: true
   semantic_similarity: 0.90
   augmentation_similarity: 0.92
   semantic_action: review
-  augmentation_action: review
-  remove_exact_transforms: false
-  candidate_neighbors: 20
+  augmentation_action: remove  # Solo equivalencias exactas y anotaciones compatibles.
+  remove_exact_transforms: true
+  candidate_neighbors: 12
   candidate_retrieval: indexed
-  candidate_pool: 512
+  candidate_pool: 256
   phash_distance: 12
   verification_min_correlation: 0.97
   verification_max_error: 0.04

@@ -42,10 +42,11 @@ junto a `--inspect` o `--apply`, evitando recalcular silenciosamente lo revisado
 Los comandos aceptan `--policy` y `--cache-dir`. Las escrituras del comando de
 deduplicación toman el mismo lock por dataset que el pipeline. Si cambias la raíz
 de caché del pipeline, pasa `--lock-dir <raíz>/locks` al comando independiente.
-No ejecutes una exportación manual mientras otro proceso modifica el dataset.
+La exportación manual comparte este bloqueo si todos los comandos usan la misma raíz de caché.
 
-El pipeline completo descarta duplicados exactos compatibles y envía aumentaciones
-a revisión por defecto. El comando independiente separa detección y aplicación:
+El pipeline con `quality-first` descarta duplicados exactos compatibles, incluidas
+rotaciones y espejos discretos. Las variantes aproximadas siguen en revisión.
+El comando independiente separa detección y aplicación:
 la detección marca revisión y `--apply` aplica la política. Antes de un descarte
 revalida los píxeles, anotaciones y estado del representante.
 
@@ -53,25 +54,33 @@ revalida los píxeles, anotaciones y estado del representante.
 FiftyOne ni archivos**. El estado `removed` excluye la muestra de la exportación.
 El material original y las relaciones permanecen disponibles para auditoría.
 
-## Política conservadora
+La exportación del pipeline y `make export` comparten los descriptores con la
+fase de deduplicación en `CACHE_DIR/deduplication/<dataset>/augmentation-cache`.
+Cada lectura vuelve a calcular SHA-256 de los bytes actuales; un cambio de
+contenido genera un descriptor nuevo. Las parejas se reutilizan solo para las
+mismas huellas, versión del detector y umbrales de verificación.
+`visual_split_audit.cache` en el resumen registra los aciertos y recálculos.
 
-Los perfiles incluidos conservan:
+## Política predeterminada para CPU
+
+`configs/quality-first.yaml` configura:
 
 ```yaml
 deduplication:
-  augmentation_action: review
-  remove_exact_transforms: false
-  candidate_neighbors: 20
+  semantic_enabled: false
+  augmentation_action: remove
+  remove_exact_transforms: true
+  candidate_neighbors: 12
   candidate_retrieval: indexed
-  candidate_pool: 512
+  candidate_pool: 256
   phash_distance: 12
   verification_min_correlation: 0.97
   verification_max_error: 0.04
 ```
 
-Para retirar automáticamente solo equivalencias discretas exactas, establece
-`augmentation_action: remove` **y** `remove_exact_transforms: true` en una copia de
-la política. Se sigue exigiendo compatibilidad de anotaciones y un representante
+Para enviar también las transformaciones exactas a revisión, establece
+`augmentation_action: review` o `remove_exact_transforms: false` en una copia de
+la política. Los descartes exigen compatibilidad de anotaciones y un representante
 conservado. Las coincidencias `verified_visual` siguen en revisión, incluso con
 esos parámetros: su precisión en datasets reales todavía requiere calibración.
 `semantic_action: remove`, admitido por compatibilidad, tampoco permite descartar
@@ -92,8 +101,11 @@ Las familias de píxeles exactos mantienen su conexión al margen del índice.
 
 ## Elección del representante y protección de información
 
-Se priorizan estado de curación, integridad y validez de anotaciones; después,
-nitidez a escala comparable, relleno de esquinas y resolución. El nombre del
+Se priorizan estado de curación, integridad, defectos y riqueza de anotaciones;
+después, resolución, nitidez a escala comparable y relleno de esquinas. Las
+dimensiones del descriptor permiten comparar resolución incluso sin ejecutar
+la fase de calidad. Una mayor resolución no demuestra por sí sola que la captura
+sea original: una imagen reescalada también puede ser mayor. El nombre del
 archivo solo desempata. Los fondos blancos/negros uniformes y la transparencia
 no se contabilizan como relleno de rotación.
 

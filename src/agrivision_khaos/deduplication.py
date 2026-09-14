@@ -115,8 +115,19 @@ def _is_probably_augmented_path(filepath: str) -> bool:
 
 
 def _sample_keep_score(sample: fo.Sample) -> tuple[float, ...]:
-    width = _metric(sample, "width")
-    height = _metric(sample, "height")
+    # Current descriptor dimensions also work when the quality phase was skipped.
+    width = _metric(sample, "augmentation_width")
+    height = _metric(sample, "augmentation_height")
+    if width <= 0 or height <= 0:
+        width, height = _metric(sample, "width"), _metric(sample, "height")
+    if width <= 0 or height <= 0:
+        metadata = _sample_value(sample, "metadata")
+        if metadata is not None:
+            if hasattr(metadata, "get"):
+                width, height = metadata.get("width", 0), metadata.get("height", 0)
+            else:
+                width, height = getattr(metadata, "width", 0), getattr(metadata, "height", 0)
+    width, height = width or 0, height or 0
     area = width * height
     blur = _metric(sample, "blur_variance", default=-1.0)
     padding = _metric(sample, "augmentation_padding", default=-1.0)
@@ -133,9 +144,9 @@ def _sample_keep_score(sample: fo.Sample) -> tuple[float, ...]:
         0.0 if _flag(sample, "has_smearing") else 1.0,
         0.0 if _flag(sample, "low_resolution") else 1.0,
         _annotation_richness(sample),
+        area,
         sharpness,
         -padding,
-        area,
         0.0 if _is_probably_augmented_path(sample.filepath) else 1.0,
     )
 
@@ -767,12 +778,19 @@ def detect_augmentation_duplicates(
     dataset.set_values(
         "asset_sha256", {key: item.asset for key, item in descriptors.items()}, key_field="id"
     )
-    for name in ("augmentation_sharpness", "augmentation_padding"):
+    for name, field_type in (
+        ("augmentation_sharpness", fo.FloatField),
+        ("augmentation_padding", fo.FloatField),
+        ("augmentation_width", fo.IntField),
+        ("augmentation_height", fo.IntField),
+    ):
         if name not in dataset.get_field_schema():
-            dataset.add_sample_field(name, fo.FloatField)
+            dataset.add_sample_field(name, field_type)
     for name, metric_name in (
         ("augmentation_sharpness", "sharpness"),
         ("augmentation_padding", "padding"),
+        ("augmentation_width", "width"),
+        ("augmentation_height", "height"),
     ):
         dataset.set_values(
             name,

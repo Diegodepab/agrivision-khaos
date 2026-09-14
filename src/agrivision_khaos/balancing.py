@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import fiftyone as fo
 import numpy as np
 
-import fiftyone as fo
 from agrivision_khaos.pipeline import PhaseResult
 
 logger = logging.getLogger(__name__)

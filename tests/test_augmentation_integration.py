@@ -26,6 +26,7 @@ from agrivision_khaos.pipeline import (
     apply_second_opinion,
     audit_duplicate_representatives,
     decision_for_tagged_duplicates,
+    load_policy,
     partition_dataset,
     prepare_duplicate_run,
     run_duplicate_phases,
@@ -167,6 +168,29 @@ class AugmentationIntegrationTests(unittest.TestCase):
         }
         self.assertEqual(first, second)
         self.assertEqual(self.dataset.info["augmentation_analysis"]["descriptor_hits"], 8)
+
+    def test_cpu_profile_removes_exact_transforms_without_semantic_inference(self):
+        suffixes = (
+            "r0", "r90", "r180", "r270",
+            "mirror_r0", "mirror_r90", "mirror_r180", "mirror_r270",
+        )
+        for suffix in suffixes:
+            self.add(f"leaf-0-{suffix}")
+        policy = load_policy(Path(__file__).parents[1] / "configs/quality-first.yaml")
+        self.assertFalse(policy.quality.ocr_enabled)
+        with patch("agrivision_khaos.deduplication.detect_semantic_duplicates") as semantic:
+            run_duplicate_phases(self.dataset, self.root / "work", 0.4, 0.65, policy)
+            semantic.assert_not_called()
+        statuses = self.dataset.values("curation.status")
+        self.assertEqual(statuses.count("kept"), 1)
+        self.assertEqual(statuses.count("removed"), 7)
+        self.assertEqual(len(self.dataset), 8)
+        for sample in self.dataset:
+            self.assertTrue(Path(sample.filepath).is_file())
+            height, width = cv2.imread(sample.filepath).shape[:2]
+            self.assertEqual(sample.augmentation_width, width)
+            self.assertEqual(sample.augmentation_height, height)
+        audit_duplicate_representatives(self.dataset)
 
     def test_remove_policy_cannot_remove_histogram_only_or_lossy_matches(self):
         self.add("leaf-0-r0")

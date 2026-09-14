@@ -35,6 +35,7 @@ class QualityPolicy(BaseModel):
     min_resolution: int = Field(default=320, ge=1)
     ocr_enabled: bool = True
     ocr_confidence: float = Field(default=60.0, ge=0, le=100)
+    ocr_timeout_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     severe_blur: float = Field(default=15.0, ge=0)
     review_blur: float = Field(default=25.0, ge=0)
     min_brightness: float = Field(default=18.0, ge=0, le=255)

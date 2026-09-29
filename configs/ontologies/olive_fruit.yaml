@@ -1,0 +1,63 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Dual Canónica de Fruto de Olivo (OliveFruit)
+# ==============================================================================
+# Unifica 11 fuentes heterogéneas bajo clases canónicas específicas (fenología,
+# sanidad y detección general) y un mapeo derivado (coarse) para interoperabilidad.
+# ==============================================================================
+
+classes:
+  aceituna:
+    - 'olive'
+    - 'Olive'
+    - 'olives'
+    - 'Olives'
+    - 'fruit'
+    - 'Color-olive'
+    - 'Roboflow is an end-to-end computer vision platform that helps you'
+
+  verde:
+    - 'Green'
+    - 'green'
+
+  envero:
+    - 'Red'
+    - 'red'
+
+  negra:
+    - 'Black'
+    - 'black'
+
+  sana:
+    - 'Buena'
+    - 'buena'
+    - 'healthy'
+    - 'Healthy'
+    - 'sana'
+    - 'sano'
+
+  defectuosa:
+    - 'Mala'
+    - 'mala'
+    - 'bad'
+    - 'Bad'
+    - 'defects'
+    - 'Defects'
+    - 'defect'
+    - 'class_B'
+    - 'class_b'
+    - 'defectuosa'
+    - 'danada'
+
+  desenfocada:
+    - 'olive_unfocused'
+    - 'desenfocada'
+
+coarse_mapping:
+  sana: sano
+  verde: sano
+  envero: sano
+  negra: sano
+  defectuosa: defecto
+  desenfocada: aceituna
+  aceituna: aceituna
+

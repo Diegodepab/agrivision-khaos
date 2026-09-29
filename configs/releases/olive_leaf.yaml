@@ -1,0 +1,71 @@
+dataset: EnfermedadesHoja
+species: Olivo (*Olea europaea*)
+domain_title: Detección y Clasificación de Patologías Foliares del Olivar (*Olea europaea*)
+slug: dataset-de-imagenes-para-la-deteccion-de-enfermedades-en-hojas-de-olivo
+tags:
+- agriculture
+- agronomy
+- computer-vision
+- crop-disease
+- deep-learning
+- disease-detection
+- image-classification
+- machine-learning
+- olea-europaea
+- olive
+- olive-diseases
+- olive-leaves
+- plant-disease
+- plant-pathology
+- precision-agriculture
+titles:
+  en: Image dataset for disease detection and foliar pathology classification in olive
+    leaves (Olea europaea)
+  es: Dataset de imágenes para la detección y clasificación de enfermedades en hojas
+    de olivo (Olea europaea)
+resource:
+  name: Dataset de imágenes de enfermedades en hojas de olivo ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de hojas
+    de olivo (Olea europaea) organizadas en ImageFolder estándar (train, val, test),
+    anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of olive leaves (*Olea europaea*) intended for the development
+    and evaluation of artificial intelligence models for plant disease detection,
+    classification, and foliar diagnosis. It contains {total_images:,} images in PNG/JPG
+    format, integrating open scientific repositories from Kaggle after quality auditing.
+    Features classification across healthy olive leaves, peacock spot (repilo / *Spilocaea
+    oleagina*), and olive rust mite (*Aculus olearius*), along with a derived binary
+    condition (healthy vs. diseased). Partitioned into zero-leakage splits (80% train,
+    10% validation, 10% test).
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de hojas de olivar (*Olea europaea*) destinado
+    al desarrollo y evaluación de modelos de inteligencia artificial para la detección,
+    clasificación y diagnóstico de enfermedades vegetales foliares. Contiene {total_images:,}
+    imágenes en formato PNG/JPG, integrando repositorios científicos abiertos de Kaggle
+    tras una exhaustiva auditoría de calidad. Presenta una jerarquía dual: diagnóstico
+    específico de repilo (*Spilocaea oleagina*), acariosis (*Aculus olearius*) y hojas
+    sanas, junto a un diagnóstico binario derivado (sano frente a enfermo). Particionado
+    sin fuga de datos (80% entrenamiento, 10% validación, 10% test).
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza las patologías bajo una ontología jerárquica
+  dual:
+
+  - **Principio ontológico:** $\text{repilo} \implies \text{enfermo}, \quad \text{pero}
+  \quad \text{enfermo} \centernot\implies \text{repilo}$. Las patologías específicas
+  son especializaciones de la condición `enfermo`.
+
+  - **Uso binario (sano vs enfermo):** Para modelos de cribado binario, cualquier
+  clase diagnóstica distinta de `sano` corresponde a la condición `enfermo` (indicado
+  en `annotations/labels.csv`).'
+condition_map:
+  sano: Sano
+  repilo: Enfermo
+  aculus_olearius: Enfermo
+  enfermo: Enfermo
+scientific_names:
+  sano: Hojas sanas y asintomáticas
+  repilo: Spilocaea oleagina (Venturia oleaginea)
+  aculus_olearius: Aculus olearius
+  enfermo: Sintomatología foliar patológica inespecífica

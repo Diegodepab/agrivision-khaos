@@ -1,0 +1,566 @@
+01_Chapingo_Fruit_Diseases:
+  authors: Ulises Enrique Campos-Ferreira, Juan Manuel González-Camacho
+  bibtex: "@article{campos2021aguacate,\n  title   = {Clasificador de red neuronal\
+    \ convolucional para identificar enfermedades del fruto de aguacate (Persea americana\
+    \ Mill.) a partir de im{'a}genes digitales},\n  author  = {Campos-Ferreira, Ulises\
+    \ Enrique and Gonz{'a}lez-Camacho, Juan Manuel},\n  journal = {Agrociencia},\n\
+    \  volume  = {55},\n  number  = {8},\n  pages   = {703--718},\n  year    = {2021},\n\
+    \  doi     = {10.47163/agrociencia.v55i8.2662}\n}"
+  description: Base de datos fitopatológica de aguacates cv. Fuerte en Morelos (México)
+    para identificar frutos sanos, con roña (Sphaceloma perseae) y antracnosis (Colletotrichum
+    spp.).
+  license: Open Access / Agrociencia
+  paper: Clasificador de red neuronal convolucional para identificar enfermedades
+    del fruto de aguacate (Persea americana Mill.) a partir de imágenes digitales
+  paper_url: https://doi.org/10.47163/agrociencia.v55i8.2662
+  raw_classes: Healthy, Scab, Anthracnose
+  title: Clasificador de enfermedades del fruto de aguacate (Chapingo)
+  url: https://doi.org/10.47163/agrociencia.v55i8.2662
+01_Global_Wheat_Head_2021:
+  authors: Etienne David, Simon Madec, Pouria Soma, et al.
+  bibtex: "@article{david2021gwhd,\n  author    = {David, Etienne and Madec, Simon\
+    \ and Soma, Pouria and others},\n  title     = {Global Wheat Head Dataset 2021:\
+    \ More Diversity to Improve the Generalizability of Large-Scale Wheat Head Detection\
+    \ Models},\n  journal   = {Plant Phenomics},\n  volume    = {2021},\n  year  \
+    \    = {2021},\n  doi       = {10.34133/2021/9846158}\n}"
+  description: El benchmark internacional más representativo de detección y fenotipado
+    de espigas de trigo en campo, con 6.515 imágenes de alta resolución (1024x1024)
+    y más de 270.000 espigas anotadas procedentes de 12 países.
+  license: CC BY-SA 4.0 International
+  paper: 'Global Wheat Head Dataset 2021: More Diversity to Improve the Generalizability
+    of Large-Scale Wheat Head Detection Models'
+  paper_url: https://doi.org/10.34133/2021/9846158
+  raw_classes: wheat_head
+  title: Global Wheat Head Dataset 2021 (GWHD 2021)
+  url: https://www.kaggle.com/c/global-wheat-detection
+01_MLD24_Mango_Leaf:
+  authors: R. Debnath, M. F. Hossain, M. S. Rahman, et al.
+  bibtex: "@dataset{debnath2024mld24,\n  author       = {Debnath, R. and Hossain,\
+    \ M. F. and Rahman, M. S. and others},\n  title        = {MLD24: A comprehensive\
+    \ dataset for Mango Leaf Disease identification},\n  year         = {2024},\n\
+    \  publisher    = {Mendeley Data},\n  doi          = {10.17632/6dvpywm2m2.1},\n\
+    \  url          = {https://data.mendeley.com/datasets/6dvpywm2m2/1}\n}"
+  description: 'Dataset estructurado de 6.400 imágenes foliares de mango en Bangladesh
+    distribuidas de forma balanceada (800 imágenes por clase) en 8 categorías fitopatológicas:
+    Antracnosis, Chancro bacteriano, Gorgojo cortador, Muerte regresiva, Mosquilla
+    de las agallas, Fumagina, Oídio y Hojas sanas.'
+  license: CC BY 4.0 International
+  paper: 'MLD24: A comprehensive dataset for Mango Leaf Disease identification in
+    Bangladesh'
+  paper_url: https://doi.org/10.17632/6dvpywm2m2.1
+  raw_classes: Anthracnose, Bacterial_Canker, Cutting_Weevil, Die_Back, Gall_Midge,
+    Healthy, Powdery_Mildew, Sooty_Mould
+  title: 'MLD24: A comprehensive dataset for Mango Leaf Disease identification'
+  url: https://data.mendeley.com/datasets/6dvpywm2m2/1
+01_MangoDHDS_Fruit_Diseases:
+  authors: I. Ullah, M. Zubair, et al.
+  bibtex: "@dataset{ullah2024mangodhds,\n  author       = {Ullah, I. and Zubair, M.\
+    \ and others},\n  title        = {MangoDHDS: A Dataset of Diseased and Healthy\
+    \ Mangoes},\n  year         = {2024},\n  publisher    = {Mendeley Data},\n  doi\
+    \          = {10.17632/b7wx8p445x.1},\n  url          = {https://data.mendeley.com/datasets/b7wx8p445x/1}\n\
+    }"
+  description: 'Dataset de 1.500 imágenes fotográficas de frutos individuales de mango
+    (300 por clase) para control de calidad fitosanitario post-cosecha: Antracnosis,
+    Chancro bacteriano, Roña o sarna, Pudrición peduncular (Stem End Rot) y frutos
+    sanos.'
+  license: CC BY 4.0 International
+  paper: 'MangoDHDS: Deep learning classification benchmark for mango fruit defects
+    and post-harvest diseases'
+  paper_url: https://doi.org/10.17632/b7wx8p445x.1
+  raw_classes: Anthracnose, Bacterial Canker, Healthy, Scab, Stem End Rot
+  title: 'MangoDHDS: A Dataset of Diseased and Healthy Mangoes'
+  url: https://data.mendeley.com/datasets/b7wx8p445x/1
+01_Tanzania_Cercospora_Leaf:
+  authors: Emmanuel Kuwilwa Chanya
+  bibtex: "@dataset{chanya2026avocadoleaf,\n  author       = {Chanya, Emmanuel Kuwilwa},\n\
+    \  title        = {Curated Avocado Leaf Image Dataset for Healthy and Cercospora\
+    \ Leaf Spot Classification},\n  year         = {2026},\n  publisher    = {Zenodo},\n\
+    \  doi          = {10.5281/zenodo.22249692},\n  url          = {https://zenodo.org/records/22249692}\n\
+    }"
+  description: Imágenes reales de campo en Rungwe (Tanzania) para la detección de
+    mancha foliar por Cercospora (Pseudocercospora purpurea) frente a hojas sanas
+    de aguacatero.
+  license: CC BY 4.0 International
+  paper: Automated avocado leaf disease classification using deep learning (Tanzania)
+  paper_url: https://zenodo.org/records/22249692
+  raw_classes: Healthy, Cercospora
+  title: Curated Avocado Leaf Image Dataset for Healthy and Cercospora Leaf Spot Classification
+  url: https://zenodo.org/records/22249692
+02_Hass_Ripening_Photography:
+  authors: Mendeley Data / Food Engineering Research
+  bibtex: "@dataset{hassripening2024mendeley,\n  author       = {Mendeley Data Contributors},\n\
+    \  title        = {Hass Avocado Ripening Photographic Dataset},\n  year      \
+    \   = {2024},\n  publisher    = {Mendeley Data},\n  version      = {v1},\n  doi\
+    \          = {10.17632/b2d83zft4s.1},\n  url          = {https://data.mendeley.com/datasets/b2d83zft4s/1}\n\
+    }"
+  description: Macro-colección estandarizada (800x800 RGB) de seguimiento diario de
+    maduración fenológica de aguacates Hass categorizada en 5 estadíos de firmeza
+    y consumo.
+  license: CC BY 4.0 International
+  paper: Photographic monitoring of Hass avocado ripening stages
+  paper_url: https://data.mendeley.com/datasets/b2d83zft4s/1
+  raw_classes: stage_1_hard, stage_2_breaking, stage_3_ripe, stage_4_firm_ripe, stage_5_overripe
+  title: Hass Avocado Ripening Photographic Dataset
+  url: https://data.mendeley.com/datasets/b2d83zft4s/1
+02_Kotagiri_Avocado_Leaf:
+  authors: Dr. N. Sengottaiyan and research team
+  bibtex: "@dataset{sengottaiyan2024kotagiri,\n  author       = {Sengottaiyan, N.\
+    \ and others},\n  title        = {Avocado Leaf DataSet K-Kotagiri (NRB)},\n  year\
+    \         = {2024},\n  publisher    = {Mendeley Data},\n  doi          = {10.17632/6zy6wxhf2v.1},\n\
+    \  url          = {https://data.mendeley.com/datasets/6zy6wxhf2v/1}\n}"
+  description: Conjunto de imágenes auténticas de campo de hojas de aguacate en Kotagiri,
+    India, clasificadas en hojas sanas y con síntomas patológicos.
+  license: CC BY 4.0 International
+  paper: NLM NIH Dataset Catalog 0003273869
+  paper_url: https://datasetcatalog.nlm.nih.gov/dataset?q=0003273869
+  raw_classes: Healthy, Disease
+  title: Avocado Leaf DataSet K-Kotagiri (NRB)
+  url: https://data.mendeley.com/datasets/6zy6wxhf2v/1
+02_MangoImageBD_Fruit_Varieties:
+  authors: K. M. Asif, S. A. Rafi, et al.
+  bibtex: "@dataset{asif2024mangoimagebd,\n  author       = {Asif, K. M. and Rafi,\
+    \ S. A. and others},\n  title        = {MangoImageBD: An Extensive Image Dataset\
+    \ of Common and Popular Mango Varieties in Bangladesh for Identification and Classification},\n\
+    \  year         = {2024},\n  publisher    = {Mendeley Data},\n  doi          =\
+    \ {10.17632/m44bxr7z9d.1},\n  url          = {https://data.mendeley.com/datasets/m44bxr7z9d/1}\n\
+    }"
+  description: Colección extensa de 5.703 imágenes de frutos de mango clasificadas
+    en 15 variedades y cultivares comerciales (Amrapali, Ashshina Classic, Ashshina
+    Zhinuk, Banana Mango, Bari-11, Bari-4, Fazli Classic, Fazli Shurmai, Gourmoti,
+    Harivanga, Himsagor, Katimon, Langra, Rupali, Shada).
+  license: CC BY 4.0 International
+  paper: 'MangoImageBD: Dataset for computer vision identification and classification
+    of commercial mango cultivars'
+  paper_url: https://doi.org/10.17632/m44bxr7z9d.1
+  raw_classes: Amrapali, Ashshina Classic, Ashshina Zhinuk, Banana Mango, Bari-11,
+    Bari-4, Fazli Classic, Fazli Shurmai, Gourmoti, Harivanga, Himsagor, Katimon,
+    Langra, Rupali, Shada
+  title: 'MangoImageBD: An Extensive Image Dataset of Common and Popular Mango Varieties
+    in Bangladesh'
+  url: https://data.mendeley.com/datasets/m44bxr7z9d/1
+02_SAR_MLD1_Mango_Leaf:
+  authors: Md. Saddam Hossain, A. K. M. Ashikuzzaman, et al.
+  bibtex: "@dataset{hossain2025sar_mld1,\n  author       = {Hossain, Md. Saddam and\
+    \ Ashikuzzaman, A. K. M. and others},\n  title        = {SAR-MLD1-2025: A High\
+    \ Quality Mango Leaf Dataset for Plant Disease Detection},\n  year         = {2025},\n\
+    \  publisher    = {Mendeley Data},\n  doi          = {10.17632/sd8hzpg69b.5},\n\
+    \  url          = {https://data.mendeley.com/datasets/sd8hzpg69b/5}\n}"
+  description: Dataset de 4.921 imágenes de alta resolución capturadas en condiciones
+    reales de campo en plantaciones de mango en 2025. Comprende patologías clave como
+    Antracnosis, Mosquilla de las agallas, Oídio, Desecación/Senescencia foliar perimetral
+    (Turning brown) y Hojas sanas.
+  license: CC BY 4.0 International
+  paper: 'SAR-MLD1: High quality benchmark dataset for deep learning-based mango leaf
+    pathology recognition'
+  paper_url: https://doi.org/10.17632/sd8hzpg69b.5
+  raw_classes: Anthracnose, Gall Midge, Healthy, Powdery Mildew, Turning brown
+  title: 'SAR-MLD1-2025: A High Quality Mango Leaf Dataset for Plant Disease Detection'
+  url: https://data.mendeley.com/datasets/sd8hzpg69b/5
+03_Field_Tree_Detection:
+  authors: UC Riverside / Roboflow Universe Community
+  bibtex: "@misc{ucriverside2023avocado,\n  title        = {Avocado In-Field Computer\
+    \ Vision Dataset},\n  author       = {UC Riverside and Julian Community},\n  howpublished\
+    \ = {Roboflow Universe},\n  year         = {2023},\n  url          = {https://universe.roboflow.com/uc-riverside-ov9yb/avocado-jvq5e}\n\
+    }"
+  description: Detección y segmentación fina por polígonos de aguacates en árboles
+    de campo bajo iluminación natural.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset (COCO / YOLO)
+  paper_url: https://universe.roboflow.com/uc-riverside-ov9yb/avocado-jvq5e
+  raw_classes: Avocado, Avocado-Ripe_Avocado
+  title: Avocado In-Field Computer Vision Dataset
+  url: https://universe.roboflow.com/uc-riverside-ov9yb/avocado-jvq5e
+10olive_detection_raw:
+  authors: Daniel Valyano
+  bibtex: "@misc{valyano2022olivefruit,\n  title        = {Olive Fruit Object Detection\
+    \ Dataset},\n  author       = {Valyano, Daniel},\n  howpublished = {Kaggle Datasets},\n\
+    \  year         = {2022},\n  url          = {https://www.kaggle.com/datasets/danielvalyano/olive-fruit-object-detection}\n\
+    }"
+  description: Anotaciones en formato YOLO para la localización y conteo de aceitunas
+    en ramas y copas de olivar.
+  license: CC0 1.0 Universal (Public Domain)
+  paper: Olive fruit object detection and counting dataset
+  paper_url: https://www.kaggle.com/datasets/danielvalyano/olive-fruit-object-detection
+  raw_classes: olive
+  title: Olive Fruit Object Detection
+  url: https://www.kaggle.com/datasets/danielvalyano/olive-fruit-object-detection
+12Olive Tree Diseases.v1i.coco:
+  authors: Arina Fay (Roboflow Universe Community)
+  bibtex: "@misc{roboflow_olive_tree_diseases_v1,\n  title        = {Olive Tree Diseases\
+    \ CV Dataset (v1)},\n  author       = {Fay, Arina},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2023},\n  url          = {https://universe.roboflow.com/arina-fay/olive-tree-diseases/dataset/1}\n\
+    }"
+  description: 'Dataset con anotaciones de localización (bounding boxes en formato
+    COCO y YOLO) para detección precisa de lesiones y síntomas en campo: Antracnosis,
+    Cochinilla de la tizne (Black Scale), Repilo (Olive Peacock Spot), Psila y Tuberculosis.'
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset (COCO / YOLO)
+  paper_url: https://universe.roboflow.com/arina-fay/olive-tree-diseases
+  raw_classes: Anthracnose, BlackScale, OlivePeacockSpot, Psyllid, Tuberculosis
+  title: Olive Tree Diseases CV Dataset
+  url: https://universe.roboflow.com/arina-fay/olive-tree-diseases/dataset/1
+13OliveTreeCrownsDb:
+  authors: Anass et al. (Moulay Ismail University, Meknes, Morocco)
+  bibtex: "@dataset{anass2024olivetreecrownsdb,\n  author       = {Anass, E. and Mohammed,\
+    \ E. and Mostafa, E.},\n  title        = {OliveTreeCrownsDb: A High-Resolution\
+    \ UAV Dataset for Detection and Segmentation in Agricultural Computer Vision},\n\
+    \  year         = {2024},\n  publisher    = {Mendeley Data},\n  version      =\
+    \ {v3},\n  doi          = {10.17632/xym8rd2srf.3},\n  url          = {https://doi.org/10.17632/xym8rd2srf.3}\n\
+    }"
+  description: Detección y segmentación de copas de olivo mediante ortofotos UAV de
+    alta resolución capturadas sobre plantaciones de olivar en Meknes (Marruecos).
+    Cuadrícula estandarizada 6x6 alineada con resolución de vuelo.
+  license: CC BY 4.0 International
+  paper: 'OliveTreeCrownsDb: A High-Resolution UAV Dataset for Detection and Segmentation
+    in Agricultural Computer Vision'
+  paper_url: https://data.mendeley.com/datasets/xym8rd2srf/3
+  raw_classes: 0 (olivo)
+  title: 'OliveTreeCrownsDb: UAV Dataset for Olive Tree Crown Detection'
+  url: https://data.mendeley.com/datasets/xym8rd2srf/3
+16)Almond (Prunus dulcis) varieties classification:
+  authors: Yurdakul, Y. M. et al.
+  bibtex: "@article{yurdakul2024almondvarieties,\n  author    = {Yurdakul, Y. M. and\
+    \ others},\n  title     = {Deep learning-based classification of almond (Prunus\
+    \ dulcis) varieties},\n  journal   = {European Food Research and Technology},\n\
+    \  year      = {2024},\n  publisher = {Springer},\n  doi       = {10.1007/s00217-024-04562-4}\n\
+    }"
+  description: Clasificación de variedades comerciales de almendra turca (AK, Kapadokya,
+    Nurlu, Sira) para control de calidad y tipificación fenotípica en procesado agroalimentario.
+  license: Research / Open Academic Access
+  paper: Deep learning-based classification of almond (Prunus dulcis) varieties
+  paper_url: https://link.springer.com/article/10.1007/s00217-024-04562-4
+  raw_classes: AK, KAPADOKYA, NURLU, SIRA
+  title: Almond (Prunus dulcis) Varieties Classification Dataset
+  url: https://github.com/ymyurdakul/datasets
+18)Almendras- pistachos- avellanas.v1i.folder:
+  authors: Roboflow Universe Community (Frutos Secos Project)
+  bibtex: "@misc{roboflow2024frutossecos,\n  author       = {Roboflow Universe Community},\n\
+    \  title        = {Almendras, pistachos, avellanas Dataset},\n  year         =\
+    \ {2024},\n  publisher    = {Roboflow Universe},\n  url          = {https://universe.roboflow.com/frutos-secos/almendras-pistachos-avellanas-hmxel}\n\
+    }"
+  description: Clasificación visual multiclase entre avellanas (hazelnut) y pistachos
+    (pistachio) en entorno de procesado.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Open Vision Datasets
+  paper_url: https://universe.roboflow.com/frutos-secos/almendras-pistachos-avellanas-hmxel
+  raw_classes: hazelnut, pistachio, Unlabeled
+  title: Almendras, Pistachos y Avellanas Dataset
+  url: https://universe.roboflow.com/frutos-secos/almendras-pistachos-avellanas-hmxel
+1Olive_Leaf_Image_Dataset:
+  authors: Habibul Basher, et al. / Alshammari et al.
+  bibtex: "@article{alshammari2020olive,\n  title   = {Classification of olive leaf\
+    \ diseases using deep convolutional neural networks},\n  author  = {Alshammari,\
+    \ G. and Basher, H. and others},\n  journal = {ResearchGate Preprint},\n  year\
+    \    = {2020},\n  url     = {https://www.kaggle.com/datasets/habibulbasher01644/olive-leaf-image-dataset}\n\
+    }"
+  description: Dataset de alta resolución (800x600 px) con hojas individuales de olivo
+    sobre fondo blanco. Contiene hojas sanas, repilo (Spilocaea oleagina) y ácaro
+    del olivo (Aculus olearius).
+  license: CC0 1.0 Universal (Public Domain)
+  paper: Classification of olive leaf diseases using deep convolutional neural networks
+  paper_url: https://www.researchgate.net/publication/343374668_Classification_of_olive_leaf_diseases_using_deep_convolutional_neural_networks
+  raw_classes: Healthy (1,050), Spilocaea oleagina (1,460), Aculus olearius (890)
+  title: Olive Leaf Image Dataset
+  url: https://www.kaggle.com/datasets/habibulbasher01644/olive-leaf-image-dataset
+20)NutsBD (Bangladesh):
+  authors: Mendeley Data / Bangladesh Agricultural Vision
+  bibtex: "@dataset{nutsbd2025mendeley,\n  author       = {Ahmed, F. and others},\n\
+    \  title        = {NutsBD: Multi-class Dataset of Common Edible Nuts},\n  year\
+    \         = {2025},\n  publisher    = {Mendeley Data},\n  version      = {v1},\n\
+    \  doi          = {10.17632/fmrnybgxb9.1},\n  url          = {https://doi.org/10.17632/fmrnybgxb9.1}\n\
+    }"
+  description: 'Clasificación multiclase de 10 tipos de frutos secos comerciales:
+    almendra, anacardo, avellana, cacahuete, macadamia, nuez, nuez de Brasil y pistacho.'
+  license: CC BY 4.0 International
+  paper: 'NutsBD: Image dataset for multi-class classification of edible tree nuts
+    and groundnuts'
+  paper_url: https://data.mendeley.com/datasets/fmrnybgxb9/1
+  raw_classes: Almond, Brazil Nuts, Cashew, Hazelnuts, Macademia, Peanut, Pistachio,
+    Thai Peanut, Vietnamian Cashew, Walnuts
+  title: 'NutsBD: A Comprehensive Dataset of Common Edible Nuts'
+  url: https://data.mendeley.com/datasets/fmrnybgxb9/1
+21)AllerNuts:
+  authors: Mendeley Data / Department of Computer Science and Engineering
+  bibtex: "@dataset{allernuts2024mendeley,\n  author       = {Hasan, M. and others},\n\
+    \  title        = {AllerNuts: Dataset for Tree Nut and Peanut Allergen Identification},\n\
+    \  year         = {2024},\n  publisher    = {Mendeley Data},\n  version      =\
+    \ {v1},\n  doi          = {10.17632/3gtbxvgm5f.1},\n  url          = {https://doi.org/10.17632/3gtbxvgm5f.1}\n\
+    }"
+  description: Conjunto de imágenes de alta resolución de 4 frutos secos alergénicos
+    primarios (almendra, anacardo, cacahuete y pistacho) en entornos y fondos reales
+    de alimentación.
+  license: CC BY 4.0 International
+  paper: 'AllerNuts: A Multi-View Image Dataset for Allergenic Nut Detection and Identification'
+  paper_url: https://data.mendeley.com/datasets/3gtbxvgm5f/1
+  raw_classes: Almond, Cashew, Peanuts, Pistachio
+  title: 'AllerNuts: Dataset for Tree Nut and Peanut Allergen Identification'
+  url: https://data.mendeley.com/datasets/3gtbxvgm5f/1
+22)Almond Damage Detection:
+  authors: Kaggle Community / Mahyeks
+  bibtex: "@misc{mahyeks2023almonddamage,\n  author       = {Mahyeks},\n  title  \
+    \      = {Almond Damage Detection Dataset},\n  year         = {2023},\n  publisher\
+    \    = {Kaggle},\n  url          = {https://www.kaggle.com/datasets/mahyeks/almond-damage-detection}\n\
+    }"
+  description: 'Clasificación binaria de integridad y calidad física del grano de
+    almendra: grano sano/intacto (NODAMAGE) frente a grano con daño mecánico o patológico
+    (DAMAGED).'
+  license: Apache 2.0
+  paper: Automated Visual Quality Sorting of Almonds
+  paper_url: https://www.kaggle.com/datasets/mahyeks/almond-damage-detection
+  raw_classes: DAMAGED, NODAMAGE
+  title: Almond Damage Detection Dataset
+  url: https://www.kaggle.com/datasets/mahyeks/almond-damage-detection
+2Olive_Leaf_Disease_(Edincik):
+  authors: Serhat Hoca, S. Uğuz & E. Uysal (Bandırma Onyedi Eylül University, Turquía)
+  bibtex: "@article{uguz2023classification,\n  title   = {Classification of olive\
+    \ leaf diseases with deep learning and machine learning methods},\n  author  =\
+    \ {U{\\u{g}}uz, S. and Uysal, E. and Hoca, S.},\n  journal = {European Food Research\
+    \ and Technology},\n  volume  = {249},\n  pages   = {3155--3167},\n  year    =\
+    \ {2023},\n  doi     = {10.1007/s00217-023-04386-8}\n}"
+  description: Imágenes capturadas de hojas de la variedad Edincik Su en Turquía.
+    Etiquetas a nivel de estado general de la planta.
+  license: Open Access / Research Use
+  paper: Classification of olive leaf diseases with deep learning and machine learning
+    methods
+  paper_url: https://doi.org/10.1007/s00217-023-04386-8
+  raw_classes: sağlam (sano), hastalıklı (enfermo)
+  title: Olive Leaf Disease (Edincik)
+  url: https://www.kaggle.com/datasets/serhathoca/zeytin
+3olive-s leaf diseases.v3i.folder:
+  authors: Hahmedai-whou6 (Roboflow Universe Community)
+  bibtex: "@misc{roboflow_olive_leaf_v3,\n  title        = {Olive's leaf diseases\
+    \ Dataset (v3)},\n  author       = {Hahmedai-whou6},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2023},\n  url          = {https://universe.roboflow.com/hahmedai-whou6/olive-s-leaf-diseases/dataset/3}\n\
+    }"
+  description: Colección de clasificación foliar que incorpora la tuberculosis del
+    olivo (Knot disease / Pseudomonas savastanoi), además de repilo, aculus olearius
+    y hojas sanas.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/hahmedai-whou6/olive-s-leaf-diseases
+  raw_classes: Healthy, Olive peacock spot, Aculus olearius, Knot disease
+  title: Olive's Leaf Diseases (Roboflow)
+  url: https://universe.roboflow.com/hahmedai-whou6/olive-s-leaf-diseases/dataset/3
+4ICAERUS_Olive_Tree_Detection_&_Multispectral_Dataset:
+  authors: ICAERUS Consortium (Horizon Europe Project)
+  bibtex: "@dataset{icaerus2024olivedetection,\n  author       = {ICAERUS Consortium},\n\
+    \  title        = {ICAERUS Olive Tree Detection and Multispectral Dataset},\n\
+    \  month        = jul,\n  year         = 2024,\n  publisher    = {Zenodo},\n \
+    \ doi          = {10.5281/zenodo.13121962},\n  url          = {https://doi.org/10.5281/zenodo.13121962}\n\
+    }"
+  description: Detección y localización de árboles de olivo a partir de vuelos UAV
+    en parcelas agrícolas comerciales en Grecia y la cuenca mediterránea. Muestras
+    auténticas no aumentadas con splits train, valid y test.
+  license: CC BY 4.0 International
+  paper: 'ICAERUS: Drones in European Agriculture and Forestry'
+  paper_url: https://zenodo.org/records/13121962
+  raw_classes: 0 (olivo)
+  title: ICAERUS Olive Tree Detection & Multispectral Dataset
+  url: https://zenodo.org/records/13121962
+50)Olive Leaf Disease — Clean Unified Dataset:
+  authors: Abeer Saleh (Kaggle Community)
+  bibtex: "@misc{saleh2024oliveclean,\n  title        = {Olive Leaf Disease - Clean\
+    \ Unified Dataset},\n  author       = {Saleh, Abeer},\n  howpublished = {Kaggle\
+    \ Datasets},\n  year         = {2024},\n  url          = {https://www.kaggle.com/datasets/abeersaleh987654321/olive-leaf-disease-clean}\n\
+    }"
+  description: Colección foliar que abarca repilo, ácaro del olivo (rust mite), cochinilla,
+    fumagina, antracnosis, deficiencia nutricional, virosis, tuberculosis y sano.
+    Normalizado y deduplicado frente a las fuentes primarias.
+  license: CC0 1.0 Universal (Public Domain)
+  paper: Kaggle Open Dataset
+  paper_url: https://www.kaggle.com/datasets/abeersaleh987654321/olive-leaf-disease-clean
+  raw_classes: Anthracnose, Black_Scale, Fumagina, Healthy, Knot_Disease, Nutritional_Deficiency,
+    Peacock_Spot, Rust_Mite, Virosis
+  title: Olive Leaf Disease — Clean Unified Dataset
+  url: https://www.kaggle.com/datasets/abeersaleh987654321/olive-leaf-disease-clean
+51Frutas:
+  authors: Abhishek Subhash Swami
+  bibtex: "@misc{swami2023fruitsolive,\n  title        = {Fruits and Vegetables Image\
+    \ Dataset (Olive Subset)},\n  author       = {Swami, Abhishek Subhash},\n  howpublished\
+    \ = {Kaggle Datasets},\n  year         = {2023},\n  url          = {https://www.kaggle.com/datasets/abhisheksubhashswami/fruits-and-vegetables}\n\
+    }"
+  description: Subconjunto de imágenes de aceitunas individuales y en racimo sobre
+    fondo limpio (250x250 px).
+  license: Database Contents License (DbCL) / Kaggle
+  paper: Fruits and Vegetables Image Classification Dataset
+  paper_url: https://www.kaggle.com/datasets/abhisheksubhashswami/fruits-and-vegetables
+  raw_classes: Olive
+  title: Fruits and Vegetables (Olive Subset)
+  url: https://www.kaggle.com/datasets/abhisheksubhashswami/fruits-and-vegetables
+52)OliveComputerVision:
+  authors: Omar (Roboflow Universe Community)
+  bibtex: "@misc{omar2024olivecomputervision,\n  title        = {Olive Computer Vision\
+    \ Dataset},\n  author       = {Omar},\n  howpublished = {Roboflow Universe},\n\
+    \  year         = {2024},\n  url          = {https://universe.roboflow.com/omar-z9f8z/olive-axotr}\n\
+    }"
+  description: Colección a gran escala de detección de aceitunas en olivar con más
+    de 180,000 anotaciones de objetos.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/omar-z9f8z/olive-axotr
+  raw_classes: olive
+  title: Olive Computer Vision (Omar)
+  url: https://universe.roboflow.com/omar-z9f8z/olive-axotr
+53Olive Betog (Graduation Project):
+  authors: Graduation Project Team / yolo-rdf7v
+  bibtex: "@misc{olivebetog2024ripeness,\n  title        = {Olive Betog - Fruit Ripeness\
+    \ Stage Dataset},\n  author       = {Graduation Project Team},\n  howpublished\
+    \ = {Roboflow Universe},\n  year         = {2024},\n  url          = {https://universe.roboflow.com/yolo-rdf7v/olive-bh00d}\n\
+    }"
+  description: 'Detección y clasificación fenológica de frutos según su estadio de
+    maduración: verdes, envero (rojo) y maduras (negras).'
+  license: CC BY 4.0 International
+  paper: Olive Fruit Phenological Ripeness Classification
+  paper_url: https://universe.roboflow.com/yolo-rdf7v/olive-bh00d
+  raw_classes: Green, Red, Black
+  title: Olive Betog Ripeness Phenology
+  url: https://universe.roboflow.com/yolo-rdf7v/olive-bh00d
+'54':
+  authors: Olivo Community
+  bibtex: "@misc{olivo2022loxls,\n  title        = {Olive Loxls Detection Dataset},\n\
+    \  author       = {Olivo Community},\n  howpublished = {Roboflow Universe},\n\
+    \  year         = {2022},\n  url          = {https://universe.roboflow.com/olivo/olive-loxls}\n\
+    }"
+  description: Detección de aceitunas en condiciones de iluminación de campo natural.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/olivo/olive-loxls
+  raw_classes: olive
+  title: Olive Loxls Detection
+  url: https://universe.roboflow.com/olivo/olive-loxls
+'55':
+  authors: Olive Detection Community
+  bibtex: "@misc{olivedetection2025multi,\n  title        = {Olive Detection Multi-Attribute\
+    \ Dataset},\n  author       = {Olive Detection Community},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2025},\n  url          = {https://universe.roboflow.com/olive-detectiom/olive-detection-1arbf}\n\
+    }"
+  description: Anotación combinada de estado de maduración (verde, roja, negra) y
+    descarte por patología o daño mecánico (bad).
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/olive-detectiom/olive-detection-1arbf
+  raw_classes: green, red, black, bad
+  title: Olive Detection Multi-Attribute
+  url: https://universe.roboflow.com/olive-detectiom/olive-detection-1arbf
+'56':
+  authors: Detection for Real Community
+  bibtex: "@misc{detectionforreal2025olive,\n  title        = {Olive Detection for\
+    \ Real Dataset},\n  author       = {Detection for Real Community},\n  howpublished\
+    \ = {Roboflow Universe},\n  year         = {2025},\n  url          = {https://universe.roboflow.com/detection-for-real/olive-8qkre}\n\
+    }"
+  description: Detección densa de aceitunas en entorno real de recolección (clase
+    saneada y normalizada a aceituna).
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/detection-for-real/olive-8qkre
+  raw_classes: olive
+  title: Olive Detection for Real
+  url: https://universe.roboflow.com/detection-for-real/olive-8qkre
+'58':
+  authors: Zaibi R&D
+  bibtex: "@misc{zaibi2022oliveclassb,\n  title        = {Olive Class B Commercial\
+    \ Quality Dataset},\n  author       = {Zaibi R&D},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2022},\n  url          = {https://universe.roboflow.com/object-detection/olive-class-b}\n\
+    }"
+  description: Clasificación de aceituna bajo estándar de calidad comercial e industrial
+    de categoría B.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/object-detection/olive-class-b
+  raw_classes: class_B
+  title: Olive Class B Commercial Quality
+  url: https://universe.roboflow.com/object-detection/olive-class-b
+'59':
+  authors: Aceitunas 7eryk
+  bibtex: "@misc{aceitunas2023diseasegood,\n  title        = {Olive Disease and Good\
+    \ Fruit Quality Dataset},\n  author       = {Aceitunas 7eryk},\n  howpublished\
+    \ = {Roboflow Universe},\n  year         = {2023},\n  url          = {https://universe.roboflow.com/aceitunas-7eryk/olive-desease-good}\n\
+    }"
+  description: 'Inspección de sanidad y aptitud del fruto de aceituna: detección de
+    frutos aptos (Buena) y dañados o enfermos (Mala).'
+  license: Public Domain
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/aceitunas-7eryk/olive-desease-good
+  raw_classes: Buena, Mala
+  title: Olive Disease & Good Fruit Quality
+  url: https://universe.roboflow.com/aceitunas-7eryk/olive-desease-good
+5Aerial_images_(UAV)_of_burned_and_unburned_olive_trees:
+  authors: Chatzistamatis et al. (University of the Aegean, Greece)
+  bibtex: "@article{chatzistamatis2024burnedolives,\n  author       = {Chatzistamatis,\
+    \ S. and Roussou, O. and Soulakellis, N.},\n  title        = {Aerial Images (UAV)\
+    \ of Burned and Unburned Olive Trees},\n  journal      = {Remote Sensing},\n \
+    \ volume       = {16},\n  number       = {23},\n  pages        = {4531},\n  year\
+    \         = {2024},\n  publisher    = {MDPI},\n  doi          = {10.3390/rs16234531}\n\
+    }"
+  description: 'Clasificación aérea de copas de árboles de olivo para diagnóstico
+    de severidad de incendios y desecación: discriminación entre olivos secos o quemados
+    (Dry) y olivos sanos y vigorosos (Healthy).'
+  license: CC BY-NC-ND 4.0 International
+  paper: Mapping Burn Severity in Olive Groves Using UAV Multispectral and Thermal
+    Imagery
+  paper_url: https://www.mdpi.com/2072-4292/16/23/4531
+  raw_classes: Dry, Healthy
+  title: Aerial Images (UAV) of Burned and Unburned Olive Trees
+  url: https://data.mendeley.com/datasets/83kpndkrb2/1
+'60':
+  authors: Olive IA Community
+  bibtex: "@misc{oliveia2025defects,\n  title        = {Olive Fruit Defects and Health\
+    \ Dataset},\n  author       = {Olive IA Community},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2025},\n  url          = {https://universe.roboflow.com/olive-ia/olive-defects-oed6r}\n\
+    }"
+  description: Identificación y detección de defectos fitopatológicos o mecánicos
+    en aceitunas frente a frutos sanos.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/olive-ia/olive-defects-oed6r
+  raw_classes: healthy, defects
+  title: Olive Fruit Defects & Health
+  url: https://universe.roboflow.com/olive-ia/olive-defects-oed6r
+62segmentation:
+  authors: Olivesssss Community
+  bibtex: "@misc{olivesssss2025segmentation,\n  title        = {Olive Instance Segmentation\
+    \ Dataset},\n  author       = {Olivesssss Community},\n  howpublished = {Roboflow\
+    \ Universe},\n  year         = {2025},\n  url          = {https://universe.roboflow.com/olivesssss/olive-segmentation-3logu}\n\
+    }"
+  description: Segmentación poligonal de alta precisión de contornos de aceitunas
+    y discriminación de frutos desenfocados.
+  license: CC BY 4.0 International
+  paper: Roboflow Universe Computer Vision Dataset
+  paper_url: https://universe.roboflow.com/olivesssss/olive-segmentation-3logu
+  raw_classes: olive, olive_unfocused
+  title: Olive Instance Segmentation
+  url: https://universe.roboflow.com/olivesssss/olive-segmentation-3logu
+01_Wheat_Plant_Diseases_HighRes:
+  authors: Kushagra Verma, et al.
+  bibtex: "@dataset{verma2024wheatdiseases,\n  author    = {Verma, Kushagra},\n  title\
+    \     = {Wheat Plant Diseases High Resolution Dataset},\n  year      = {2024},\n\
+    \  publisher = {Kaggle},\n  url       = {https://www.kaggle.com/datasets/kushagra3204/wheat-plant-diseases}\n\
+    }"
+  description: Diagnóstico fitopatológico multiclase de alta resolución en trigo (Triticum
+    aestivum), abarcando 15 clases de enfermedades fúngicas, daños por plagas y tejido sano
+    en campo.
+  license: CC BY 4.0 International
+  paper: High Resolution Wheat Plant Diseases Dataset for Machine Learning
+  paper_url: https://www.kaggle.com/datasets/kushagra3204/wheat-plant-diseases
+  raw_classes: Aphid, Black, Blast, Brown, Common, Fusarium, Healthy, Leaf, Mildew,
+    Mite, Septoria, Smut, Stem, Tan, Yellow
+  title: Wheat Plant Diseases High Res Dataset
+  url: https://www.kaggle.com/datasets/kushagra3204/wheat-plant-diseases
+01_Field_Grown_Barley_Disease:
+  authors: Anna-Maria et al. (Federal Research Centre for Cultivated Plants, JKI, Germany)
+  bibtex: "@dataset{jki2026barleydisease,\n  author    = {Anna-Maria, K. and others},\n\
+    \  title     = {Data for Deep Learning-Based Identification of Visual Disease\
+    \ Symptoms in Field-Grown Barley},\n  year      = {2026},\n  publisher = {Mendeley\
+    \ Data},\n  doi       = {10.17632/4ny92p2r8f.1},\n  url       = {https://doi.org/10.17632/4ny92p2r8f.1}\n\
+    }"
+  description: Diagnóstico fitopatológico de cebada cultivada en campo abierto (Hordeum
+    vulgare), abarcando síntomas foliares de roya y ramularia con máscaras de segmentación
+    y parches de alta resolución.
+  license: CC BY 4.0 International
+  paper: Deep Learning-Based Identification of Visual Disease Symptoms in Field-Grown
+    Barley
+  paper_url: https://data.mendeley.com/datasets/4ny92p2r8f/1
+  raw_classes: ramularia, rust, healthy
+  title: Field-Grown Barley Disease Multiclass Dataset
+  url: https://data.mendeley.com/datasets/4ny92p2r8f/1
+

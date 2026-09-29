@@ -34,6 +34,7 @@ transaccionales.
 
 7. Comprueba el reporte HTML generado en `reports/pipeline/<dataset>/<run_id>/report.html`.
 8. **Auditoría visual y Human-in-the-Loop:** Inicia la app con `make app DATASET="mi_dataset"` (puerto 5151). Filtra por las Vistas Guardadas (`01_Exportadas_Kept`, `02_En_Revision_Review`, `03_Descartadas_Removed`), audita muestras con la tecla `t` (`kept` para salvar/recuperar, `removed` para descartar) y consolida con `make sync-reviews` o exporta a disco con `make export`. Consulta la guía detallada en [Fase 4: Revisión Manual](workflow/4_manual_review.md).
+9. **Publicación en Portales Open Data:** Empaqueta el dataset curado para su distribución en el Portal de Datos Abiertos de Andalucía (ISI2A2), Agora Datalab o Zenodo mediante `make bundle DATASET="mi_dataset" VERSION="1.0.0"`. Genera un paquete autónomo comprimido (`.tar.gz`) con soporte dual para jerarquías de clases (finas vs unificadas), máscaras de segmentación, trazabilidad SHA-256 muestra a muestra, `manifest.csv` y documentación `DATASET_CARD.md`. Consulta la guía detallada en [Fase 5: Publicación Open Data](workflow/5_open_data_publishing.md).
 
 Los datos originales se montan en `/datasets/raw` como solo lectura. Una
 ejecución interrumpida no publica el destino final y puede reanudarse desde sus

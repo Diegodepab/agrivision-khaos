@@ -1,0 +1,109 @@
+dataset: FrutosSecos
+species: Almendro (*Prunus dulcis*) y Frutos de Cáscara (Frutos Secos)
+domain_title: Identificación, Variedades e Inspección de Calidad de Frutos Secos (*Prunus
+  dulcis* y Frutos de Cáscara)
+slug: dataset-de-imagenes-para-clasificacion-de-frutos-secos-variedades-y-calidad
+tags:
+- agriculture
+- agronomy
+- allergen-detection
+- almond
+- almond-varieties
+- computer-vision
+- crop-quality
+- deep-learning
+- food-industry
+- food-quality
+- fruit-classification
+- image-classification
+- machine-learning
+- nuts
+- post-harvest
+- precision-agriculture
+titles:
+  en: Image dataset for tree nut classification, almond varieties, and quality inspection
+    (Prunus dulcis & Edible Nuts)
+  es: Dataset de imágenes para clasificación de frutos secos, variedades de almendra
+    e inspección de calidad (Prunus dulcis y Frutos de Cáscara)
+resource:
+  name: Dataset de imágenes de frutos secos (variedades y calidad) ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de frutos
+    secos y almendro (Prunus dulcis) organizadas en ImageFolder estándar (train, val,
+    test), anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of edible tree nuts and almond varieties (*Prunus dulcis*)
+    intended for artificial intelligence models in precision agriculture, agri-food
+    quality control, commercial sorting, and allergen detection. It contains {total_images:,}
+    images across 14 fine-grained classes, integrating 5 open scientific repositories
+    (Yurdakul et al. Turkish Almond Varieties, Roboflow Nuts, NutsBD Mendeley, AllerNuts
+    Mendeley, and Almond Damage Detection Kaggle) after rigorous visual quality curation
+    and deduplication. The dataset features a multi-tiered hierarchy: identification
+    of commercial nut species (almonds, hazelnuts, pistachios, cashews, peanuts, walnuts,
+    Brazil nuts, macadamias), commercial almond variety tipification (AK, Kapadokya,
+    Nurlu, Sira), and almond kernel physical sanity and damage assessment (healthy
+    vs. damaged/defective kernels). Partitioned into zero-leakage splits (80% train,
+    10% validation, 10% test). The dataset can be used in computer vision, deep learning,
+    industrial optical sorting machines, agri-food robotics, and post-harvest quality
+    inspection.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de frutos secos y variedades comerciales de almendra
+    (*Prunus dulcis*) destinado al desarrollo y evaluación de modelos de inteligencia
+    artificial en agricultura de precisión, control de calidad agroalimentario, clasificación
+    industrial y detección de alérgenos. Contiene {total_images:,} imágenes organizadas
+    en 14 clases taxonómicas detalladas, integrando 5 repositorios científicos abiertos
+    (Variedades de Almendra Turca de Yurdakul et al., Frutos Secos de Roboflow, NutsBD
+    Mendeley, AllerNuts Mendeley y Detección de Daño en Almendra de Kaggle) tras un
+    riguroso control de calidad y deduplicación visual. Presenta una jerarquía multi-nivel:
+    identificación de especies de frutos de cáscara (almendras, avellanas, pistachos,
+    anacardos, cacahuetes, nueces, nueces de Brasil y macadamias), tipificación fenotípica
+    de variedades comerciales de almendra (AK, Kapadokya, Nurlu, Sira) y evaluación
+    de integridad física y daño en el grano (sano frente a dañado o defectuoso). Particionado
+    sin fuga de datos (80% entrenamiento, 10% validación, 10% test). Puede utilizarse
+    en visión artificial, aprendizaje profundo, calibradoras ópticas industriales,
+    robótica agroalimentaria y control de calidad post-cosecha.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza los frutos secos y variedades de almendro
+  bajo una ontología jerárquica unificada:
+
+  - **Identificación de Especies de Frutos Secos:** Clasificación entre especies botánicas
+  de gran valor comercial (`almendra`, `avellana`, `pistacho`, `anacardo`, `cacahuete`,
+  `nuez`, `nuez_brasil`, `macadamia`).
+
+  - **Variedades Comerciales de Almendra:** Tipificación fenotípica en almendra (*Prunus
+  dulcis*) entre variedades cultivadas (`ak`, `kapadokya`, `nurlu`, `sira`).
+
+  - **Inspección de Calidad Fitosanitaria e Integridad Física:** Detección de grano
+  dañado por plagas, hongos o daño mecánico (`danada`) frente a grano sano e intacto
+  (`sana`).'
+condition_map:
+  almendra: Fruto / Almendra
+  ak: Variedad Ak
+  kapadokya: Variedad Kapadokya
+  nurlu: Variedad Nurlu
+  sira: Variedad Sira
+  sana: Sano / Intacta
+  danada: Defecto / Dañada
+  avellana: Fruto / Avellana
+  pistacho: Fruto / Pistacho
+  anacardo: Fruto / Anacardo
+  cacahuete: Fruto / Cacahuete
+  nuez: Fruto / Nuez
+  nuez_brasil: Fruto / Nuez de Brasil
+  macadamia: Fruto / Macadamia
+scientific_names:
+  almendra: Prunus dulcis
+  ak: Prunus dulcis var. Ak
+  kapadokya: Prunus dulcis var. Kapadokya
+  nurlu: Prunus dulcis var. Nurlu
+  sira: Prunus dulcis var. Sira
+  sana: Grano de almendra intacto y sano
+  danada: Grano de almendra dañado o defectuoso
+  avellana: Corylus avellana
+  pistacho: Pistacia vera
+  anacardo: Anacardium occidentale
+  cacahuete: Arachis hypogaea
+  nuez: Juglans regia
+  nuez_brasil: Bertholletia excelsa
+  macadamia: Macadamia integrifolia

@@ -1,0 +1,57 @@
+classes:
+  anthracnose:
+    - anthracnose
+    - anthracnose_of_papaya
+    - anthracanose_diease
+    - antracnosis
+    - colletotrichum
+  bacterial_spot:
+    - bacterialspot
+    - bacterial_spot
+    - mancha_bacteriana
+    - xanthomonas
+    - pseudomonas
+  leaf_curl:
+    - curl
+    - papaya_leaf_curl_virus
+    - leaf_curl
+    - rizado_foliar
+    - enrollamiento
+  healthy:
+    - healthy
+    - good_papaya
+    - sano
+    - sana
+    - hojas_sanas
+  mealybug:
+    - mealybug
+    - mealybug_and_white_fly
+    - cochinilla
+    - mosca_blanca
+  mite:
+    - mite_disease
+    - mite
+    - acaro
+    - acaros
+  mosaic:
+    - mosaic
+    - papaya_mosaic_virus
+    - mosaico
+  ringspot:
+    - ringspot
+    - ring_spot
+    - ring_spot_diease
+    - mancha_anular
+    - prsv
+
+coarse_mapping:
+  sano:
+    - healthy
+  enfermo:
+    - anthracnose
+    - bacterial_spot
+    - leaf_curl
+    - mealybug
+    - mite
+    - mosaic
+    - ringspot

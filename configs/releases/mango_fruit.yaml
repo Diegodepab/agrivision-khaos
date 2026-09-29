@@ -1,0 +1,110 @@
+dataset: MangoFruit
+species: Mango (*Mangifera indica*)
+domain_title: Clasificación de Variedades Comerciales, Detección de Defectos y Patologías
+  del Fruto de Mango (*Mangifera indica*)
+slug: dataset-de-imagenes-para-la-clasificacion-de-variedades-y-patologias-del-fruto-de-mango
+tags:
+- agriculture
+- agronomy
+- anthracnose
+- commercial-varieties
+- computer-vision
+- crop-quality
+- deep-learning
+- fruit-classification
+- image-classification
+- machine-learning
+- mangifera-indica
+- mango
+- mango-fruit
+- post-harvest
+- precision-agriculture
+- stem-end-rot
+titles:
+  en: Image dataset for mango fruit variety classification, defect inspection, and
+    pathology diagnosis (Mangifera indica)
+  es: Dataset de imágenes para clasificación de variedades, inspección de defectos
+    y patologías del fruto de mango (Mangifera indica)
+resource:
+  name: Dataset de imágenes de fruto de mango (variedades y patologías) ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de fruto
+    de mango (Mangifera indica) organizadas en ImageFolder estándar (train, val, test),
+    anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of mango fruit (*Mangifera indica*) intended for artificial
+    intelligence models in precision agriculture, agri-food quality control, post-harvest
+    sorting, and cultivar identification. It contains {total_images:,} images across
+    17 classes, integrating 2 open scientific repositories from Mendeley Data (MangoDHDS
+    and MangoImageBD) after rigorous visual quality curation and deduplication. The
+    dataset features a multi-tiered hierarchy: identification of 15 commercial cultivars
+    (Amrapali, Ashshina Classic, Ashshina Zhinuk, Banana Mango, Bari-11, Bari-4, Fazli
+    Classic, Fazli Shurmai, Gourmoti, Harivanga, Himsagor, Katimon, Langra, Rupali,
+    Shada) and fine-grained post-harvest pathology classification (healthy fruit vs.
+    anthracnose, bacterial canker, scab, and stem end rot). Partitioned into zero-leakage
+    splits (80% train, 10% validation, 10% test). Can be used in computer vision,
+    deep learning, automated optical sorting machinery, and fruit quality assessment.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de fruto de mango (*Mangifera indica*) destinado
+    al desarrollo y evaluación de modelos de inteligencia artificial en agricultura
+    de precisión, control de calidad agroalimentario, calibración post-cosecha e identificación
+    varietal. Contiene {total_images:,} imágenes organizadas en 17 clases, integrando
+    2 repositorios científicos abiertos de Mendeley Data (MangoDHDS y MangoImageBD)
+    tras un exhaustivo filtrado de calidad y deduplicación visual. Presenta una jerarquía
+    dual: tipificación de 15 cultivares y variedades comerciales de mango (Amrapali,
+    Ashshina Classic, Ashshina Zhinuk, Banana Mango, Bari-11, Bari-4, Fazli Classic,
+    Fazli Shurmai, Gourmoti, Harivanga, Himsagor, Katimon, Langra, Rupali, Shada)
+    e inspección fitopatológica post-cosecha (frutos sanos frente a antracnosis, chancro
+    bacteriano, roña/sarna y pudrición peduncular). Particionado sin fuga de datos
+    (80% entrenamiento, 10% validación, 10% test). Puede utilizarse en visión artificial,
+    aprendizaje profundo, calibradoras ópticas industriales y robótica agroalimentaria.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza el fruto de mango bajo una ontología fitosanitaria
+  y varietal:
+
+  - **Inspección de Patologías y Defectos Post-Cosecha:** Clasificación diagnóstica
+  entre frutos sanos (`sano`), antracnosis (`antracnosis`), chancro bacteriano (`chancro_bacteriano`),
+  roña/sarna (`rona_sarna`) y pudrición peduncular (`pudricion_peduncular`).
+
+  - **Identificación de Cultivares y Variedades Comerciales:** Tipificación de 15
+  variedades de mango para clasificación agronómica e industrial (`variedad_amrapali`,
+  `variedad_ashshina`, `variedad_banana`, `variedad_bari`, `variedad_fazli`, `variedad_gourmoti`,
+  `variedad_harivanga`, `variedad_himsagor`, `variedad_katimon`, `variedad_langra`,
+  `variedad_rupali`, `variedad_shada`).'
+condition_map:
+  sano: Sano / Apto
+  antracnosis: Patología / Antracnosis
+  chancro_bacteriano: Patología / Chancro
+  rona_sarna: Patología / Roña o sarna
+  pudricion_peduncular: Patología / Pudrición peduncular
+  variedad_amrapali: Variedad comercial Amrapali
+  variedad_ashshina: Variedad comercial Ashshina
+  variedad_banana: Variedad comercial Banana Mango
+  variedad_bari: Variedad comercial BARI
+  variedad_fazli: Variedad comercial Fazli
+  variedad_gourmoti: Variedad comercial Gourmoti
+  variedad_harivanga: Variedad comercial Harivanga
+  variedad_himsagor: Variedad comercial Himsagor
+  variedad_katimon: Variedad comercial Katimon
+  variedad_langra: Variedad comercial Langra
+  variedad_rupali: Variedad comercial Rupali
+  variedad_shada: Variedad comercial Shada
+scientific_names:
+  sano: Frutos de Mangifera indica sanos y aptos
+  antracnosis: Colletotrichum gloeosporioides
+  chancro_bacteriano: Xanthomonas campestris pv. mangiferaeindicae
+  rona_sarna: Elsinoe mangiferae
+  pudricion_peduncular: Lasiodiplodia theobromae
+  variedad_amrapali: Mangifera indica cv. Amrapali
+  variedad_ashshina: Mangifera indica cv. Ashshina
+  variedad_banana: Mangifera indica cv. Banana Mango
+  variedad_bari: Mangifera indica cv. BARI
+  variedad_fazli: Mangifera indica cv. Fazli
+  variedad_gourmoti: Mangifera indica cv. Gourmoti
+  variedad_harivanga: Mangifera indica cv. Harivanga
+  variedad_himsagor: Mangifera indica cv. Himsagor
+  variedad_katimon: Mangifera indica cv. Katimon
+  variedad_langra: Mangifera indica cv. Langra
+  variedad_rupali: Mangifera indica cv. Rupali
+  variedad_shada: Mangifera indica cv. Shada

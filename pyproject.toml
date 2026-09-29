@@ -44,6 +44,8 @@ agrivision-export = "agrivision_khaos.export:main"
 agrivision-mock = "agrivision_khaos.synthetic:main"
 agrivision-preflight = "agrivision_khaos.preflight:main"
 agrivision-balance = "agrivision_khaos.balancing:main"
+agrivision-bundle = "agrivision_khaos.bundle:main"
+
 
 [build-system]
 requires = ["setuptools>=83"]

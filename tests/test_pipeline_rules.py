@@ -518,6 +518,42 @@ class PipelineRuleTests(TestCase):
             self.assertIn("train", dataset[s2.id].tags)
             self.assertNotIn("test", dataset[s2.id].tags)
 
+    def test_reconcile_visual_splits_transitive_components(self):
+        from agrivision_khaos.augmentation import DescriptorCache
+        from agrivision_khaos.split_audit import audit_visual_splits
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            img = np.full((100, 100, 3), 200, dtype=np.uint8)
+            p1, p2, p3 = root / "p1.png", root / "p2.png", root / "p3.png"
+            cv2.imwrite(str(p1), img)
+            cv2.imwrite(str(p2), img)
+            cv2.imwrite(str(p3), img)
+
+            cache = DescriptorCache(root / "cache")
+            dataset = fo.Dataset()
+            self.addCleanup(lambda: fo.delete_dataset(dataset.name, verbose=False) if fo.dataset_exists(dataset.name) else None)
+
+            s1 = fo.Sample(filepath=str(p1), tags=["val"])
+            s2 = fo.Sample(filepath=str(p2), tags=["val"])
+            s3 = fo.Sample(filepath=str(p3), tags=["train"])
+            dataset.add_samples([s1, s2, s3])
+
+            paths = {s1.id: str(p1), s2.id: str(p2), s3.id: str(p3)}
+            assignments = {s1.id: "val", s2.id: "val", s3.id: "train"}
+
+            reconciled = pipeline.reconcile_visual_splits(
+                paths, assignments, dataset, DeduplicationPolicy(), cache
+            )
+            self.assertEqual(reconciled, 2)
+            self.assertEqual(assignments[s1.id], "train")
+            self.assertEqual(assignments[s2.id], "train")
+            self.assertEqual(assignments[s3.id], "train")
+
+            # Must pass audit_visual_splits without raising RuntimeError!
+            audit_result = audit_visual_splits(paths, assignments, DeduplicationPolicy(), cache)
+            self.assertEqual(audit_result["confirmed_cross_split_pairs"], 0)
+
     def test_suggest_label_mappings_detects_cross_dataset_typos(self):
         labels = ["Anthracnose", "Athracnose", "Anthracanose Diease", "healthy", "mature", "unmature"]
         label_to_sources = {

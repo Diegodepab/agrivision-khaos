@@ -1,4 +1,4 @@
-.PHONY: help mock dry-run preflight models gpu-build setup quality deduplicate pipeline balance app export sync-reviews fix-perms docs clean
+.PHONY: help mock dry-run preflight models gpu-build setup quality deduplicate pipeline balance app export sync-reviews bundle release fix-perms docs clean
 
 -include .env
 
@@ -34,6 +34,9 @@ MOCK_DIR ?= data/mock
 BENCHMARK_DIR ?= /datasets/cache/augmentation-benchmark
 BENCHMARK_ARGS ?=
 BENCHMARK_MANIFEST ?=
+VERSION ?= 1.0
+DATE ?=
+LAYOUT ?=
 HOST_UID ?= $(shell id -u)
 HOST_GID ?= $(shell id -g)
 
@@ -166,6 +169,16 @@ sync-reviews:
 	@echo "Sincronizando decisiones manuales tomadas en FiftyOne..."
 	$(DOCKER_CMD) agrivision-export --dataset $(DATASET) --cache-dir $(CACHE_DIR) --allow-unresolved --sync-only
 	@$(MAKE) fix-perms
+
+## Empaqueta el dataset curado en un bundle Open Data estándar (.zip, README, reporte, sumas SHA256)
+bundle:
+	@echo "Generando paquete de distribución Open Data..."
+	$(DOCKER_CMD) python -m agrivision_khaos.bundle --dataset $(DATASET) --export-dir $(EXPORT_DIR) --report-dir $(REPORT_DIR) $(if $(VERSION),--version $(VERSION)) $(if $(DATE),--date $(DATE)) $(if $(ARCHIVE),--archive $(ARCHIVE)) $(if $(LAYOUT),--layout $(LAYOUT)) $(if $(METADATA),--metadata $(METADATA)) $(if $(SOURCES),--sources $(SOURCES))
+	@$(MAKE) fix-perms
+
+## Alias para bundle (publicación de release)
+release: bundle
+
 
 ## Levanta la documentación de Zensical
 docs:

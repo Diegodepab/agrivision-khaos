@@ -1,0 +1,112 @@
+# Ontología jerárquica para el dataset unificado de Frutos Secos (Prunus dulcis y Frutos de Cáscara)
+# Define clases canónicas finas (especies, variedades y estado de daño) y su jerarquía general (coarse)
+
+classes:
+  # Especies botánicas y comerciales de frutos secos
+  almendra:
+    - "almond"
+    - "almonds"
+    - "almendra"
+    - "almendras"
+    - "prunus_dulcis"
+  avellana:
+    - "hazelnut"
+    - "hazelnuts"
+    - "avellana"
+    - "avellanas"
+    - "corylus_avellana"
+  pistacho:
+    - "pistachio"
+    - "pistachios"
+    - "pistacho"
+    - "pistachos"
+    - "pistacia_vera"
+  anacardo:
+    - "cashew"
+    - "cashews"
+    - "vietnamian_cashew"
+    - "vietnamese_cashew"
+    - "anacardo"
+    - "anacardos"
+    - "maranon"
+    - "anacardium_occidentale"
+  cacahuete:
+    - "peanut"
+    - "peanuts"
+    - "thai_peanut"
+    - "cacahuete"
+    - "cacahuetes"
+    - "mani"
+    - "arachis_hypogaea"
+  nuez:
+    - "walnut"
+    - "walnuts"
+    - "nuez"
+    - "nueces"
+    - "juglans_regia"
+  nuez_brasil:
+    - "brazil_nuts"
+    - "brazil_nut"
+    - "nuez_de_brasil"
+    - "bertholletia_excelsa"
+  macadamia:
+    - "macademia"
+    - "macadamia"
+    - "macadamias"
+    - "macadamia_integrifolia"
+
+  # Variedades fenotípicas comerciales de almendra (Yurdakul et al., 2024)
+  ak:
+    - "ak"
+    - "almond_ak"
+  kapadokya:
+    - "kapadokya"
+    - "almond_kapadokya"
+  nurlu:
+    - "nurlu"
+    - "almond_nurlu"
+  sira:
+    - "sira"
+    - "almond_sira"
+
+  # Estado físico y evaluación de calidad en almendra
+  sana:
+    - "nodamage"
+    - "no_damage"
+    - "sana"
+    - "healthy"
+    - "intact"
+    - "intacta"
+  danada:
+    - "damaged"
+    - "damage"
+    - "danada"
+    - "dañada"
+    - "defecto"
+    - "defective"
+
+# Mapeo a nivel de gran familia / especie de fruto seco
+coarse_mapping:
+  almendra:
+    - almendra
+    - ak
+    - kapadokya
+    - nurlu
+    - sira
+    - sana
+    - danada
+  avellana:
+    - avellana
+  pistacho:
+    - pistacho
+  anacardo:
+    - anacardo
+  cacahuete:
+    - cacahuete
+  nuez:
+    - nuez
+  nuez_brasil:
+    - nuez_brasil
+  macadamia:
+    - macadamia
+

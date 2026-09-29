@@ -1,0 +1,12 @@
+canonical_mapping:
+  wheat_head:
+    - wheat_head
+    - espiga
+    - head
+    - spike
+    - wheat
+
+coarse_mapping:
+  wheat_head:
+    - wheat_head
+

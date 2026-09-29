@@ -1,0 +1,38 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Dual Canónica de Enfermedades de Hoja de Aguacate
+# ==============================================================================
+# Unifica colecciones foliares bajo clases finas canónicas y un mapeo
+# derivado (coarse) binario (enfermo vs sano) para interoperabilidad Open Data.
+# ==============================================================================
+
+classes:
+  sano:
+    - 'healthy'
+    - 'Healthy'
+    - 'sano'
+    - 'sana'
+    - 'healthy_leaf'
+    - 'healthy_leaves'
+
+  cercospora:
+    - 'cercospora'
+    - 'Cercospora'
+    - 'cercospora_leaf_spot'
+    - 'cercospora-leaf-spot'
+    - 'cercospora_purpurea'
+    - 'pseudocercospora'
+
+  enfermo:
+    - 'disease'
+    - 'Disease'
+    - 'diseased'
+    - 'enfermo'
+    - 'enferma'
+    - 'leaf_disease'
+
+coarse_mapping:
+  enfermo:
+    - cercospora
+    - enfermo
+  sano:
+    - sano

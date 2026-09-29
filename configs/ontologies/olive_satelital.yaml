@@ -1,0 +1,39 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Dual Canónica de Teledetección (OliveSatelital)
+# ==============================================================================
+# Unifica 3 fuentes de teledetección y vuelo UAV (ICAERUS, OliveTreeCrownsDb,
+# y Aerial Burned/Unburned) bajo clases canónicas específicas (detección de
+# copas y estado del dosel) y un mapeo derivado (coarse) para interoperabilidad.
+# ==============================================================================
+
+classes:
+  olivo:
+    - '0'
+    - 'olivo'
+    - 'olive'
+    - 'olive_tree'
+    - 'crown'
+    - 'tree'
+    - 'tree_crown'
+
+  quemado:
+    - 'Dry'
+    - 'dry'
+    - 'burned'
+    - 'dry_tree'
+    - 'burned_tree'
+    - 'quemado'
+    - 'seco'
+
+  sano:
+    - 'Healthy'
+    - 'healthy'
+    - 'healthy_tree'
+    - 'unburned'
+    - 'unburned_tree'
+    - 'sano'
+
+coarse_mapping:
+  olivo: olivo
+  sano: sano
+  quemado: dañado

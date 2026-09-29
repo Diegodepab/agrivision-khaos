@@ -1,0 +1,93 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Dual Canónica de Patologías Foliares del Mango
+# Especie: Mangifera indica
+# ==============================================================================
+# Unifica MLD24 (6.400 imgs) y SAR-MLD1-2025 (4.921 imgs) en 9 clases canónicas
+# finas y un mapeo grueso binario (patologico vs sano) para interoperabilidad Open Data.
+# ==============================================================================
+
+classes:
+  sano:
+    - 'healthy'
+    - 'Healthy'
+    - 'sano'
+    - 'sana'
+    - 'healthy_leaf'
+    - 'healthy_leaves'
+
+  antracnosis:
+    - 'anthracnose'
+    - 'Anthracnose'
+    - 'antracnosis'
+    - 'Colletotrichum gloeosporioides'
+
+  oidio:
+    - 'powdery_mildew'
+    - 'powdery mildew'
+    - 'Powdery Mildew'
+    - 'Powdery_Mildew'
+    - 'oidio'
+    - 'Oidium mangiferae'
+
+  mosquilla_agallas:
+    - 'gall_midge'
+    - 'gall midge'
+    - 'Gall Midge'
+    - 'Gall_Midge'
+    - 'agallas'
+    - 'Procontarinia matteiana'
+
+  chancro_bacteriano:
+    - 'bacterial_canker'
+    - 'bacterial canker'
+    - 'Bacterial Canker'
+    - 'Bacterial_Canker'
+    - 'chancro'
+    - 'chancro bacteriano'
+    - 'Xanthomonas campestris'
+
+  muerte_regresiva:
+    - 'die_back'
+    - 'die back'
+    - 'Die Back'
+    - 'Die_Back'
+    - 'muerte regresiva'
+    - 'Lasiodiplodia theobromae'
+
+  fumagina:
+    - 'sooty_mould'
+    - 'sooty mould'
+    - 'Sooty Mould'
+    - 'Sooty_Mould'
+    - 'fumagina'
+    - 'Capnodium mangiferae'
+
+  gorgojo_cortador:
+    - 'cutting_weevil'
+    - 'cutting weevil'
+    - 'Cutting Weevil'
+    - 'Cutting_Weevil'
+    - 'gorgojo cortador'
+    - 'Deporaus marginatus'
+
+  necrosis_foliar:
+    - 'turning_brown'
+    - 'turning brown'
+    - 'Turning Brown'
+    - 'Turning brown'
+    - 'necrosis foliar'
+    - 'senescencia'
+
+coarse_mapping:
+  patologico:
+    - antracnosis
+    - oidio
+    - mosquilla_agallas
+    - chancro_bacteriano
+    - muerte_regresiva
+    - fumagina
+    - gorgojo_cortador
+    - necrosis_foliar
+  sano:
+    - sano
+

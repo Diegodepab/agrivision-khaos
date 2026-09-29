@@ -1,0 +1,92 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Dual Canónica de Enfermedades de Hoja de Olivo
+# ==============================================================================
+# Unifica 5 fuentes heterogéneas bajo 12 clases finas canónicas y un mapeo
+# derivado (coarse) binario (enfermo vs sano) para máxima interoperabilidad Open Data.
+# ==============================================================================
+
+classes:
+  repilo:
+    - 'olive_peacock_spot'
+    - 'olive peacock spot'
+    - 'OlivePeacockSpot'
+    - 'olivepeacockspot'
+    - 'Peacock_Spot'
+    - 'peacock_spot'
+    - 'Cycloconium'
+    - 'cycloconium'
+    - 'repilo'
+
+  aculus_olearius:
+    - 'Aculus olearius'
+    - 'aculus_olearius'
+    - 'Aculus_Olearius'
+    - 'aculus'
+    - 'Rust_Mite'
+    - 'rust_mite'
+    - 'olive_rust_mite'
+    - 'Olive_Rust_Mite'
+
+  sano:
+    - 'Healthy'
+    - 'healthy'
+    - 'sağlam'
+    - 'saglam'
+    - 'sano'
+
+  tuberculosis:
+    - 'Tuberculosis'
+    - 'tuberculosis'
+    - 'knot disease'
+    - 'knot_disease'
+    - 'Knot_Disease'
+
+  antracnosis:
+    - 'Anthracnose'
+    - 'anthracnose'
+    - 'antracnosis'
+
+  cochinilla_tizne:
+    - 'BlackScale'
+    - 'blackscale'
+    - 'Black_Scale'
+    - 'black_scale'
+    - 'cochinilla_tizne'
+
+  psila:
+    - 'Psyllid'
+    - 'psyllid'
+    - 'psila'
+
+  fumagina:
+    - 'Fumagina'
+    - 'fumagina'
+
+  deficiencia_nutricional:
+    - 'Nutritional_Deficiency'
+    - 'nutritional_deficiency'
+    - 'deficiencia_nutricional'
+
+  virosis:
+    - 'Virosis'
+    - 'virosis'
+
+  enfermo:
+    - 'hastalıklı'
+    - 'hastalikli'
+    - 'diseased'
+    - 'enfermo'
+
+coarse_mapping:
+  repilo: enfermo
+  aculus_olearius: enfermo
+  tuberculosis: enfermo
+  antracnosis: enfermo
+  cochinilla_tizne: enfermo
+  psila: enfermo
+  fumagina: enfermo
+  deficiencia_nutricional: enfermo
+  virosis: enfermo
+  enfermo: enfermo
+  sano: sano
+

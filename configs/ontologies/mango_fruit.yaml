@@ -1,0 +1,117 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Canónica de Fruto de Mango (Mangifera indica)
+# ==============================================================================
+# Unifica patologías del fruto (MangoDHDS, 1.500 imgs) y clasificación
+# de cultivares/variedades comerciales (MangoImageBD, 5.703 imgs).
+# ==============================================================================
+
+classes:
+  sano:
+    - 'healthy'
+    - 'Healthy'
+    - 'sano'
+    - 'sana'
+    - 'mango_sano'
+
+  antracnosis:
+    - 'anthracnose'
+    - 'Anthracnose'
+    - 'antracnosis'
+    - 'Colletotrichum gloeosporioides'
+
+  chancro_bacteriano:
+    - 'bacterial_canker'
+    - 'Bacterial_Canker'
+    - 'Bacterial Canker'
+    - 'chancro'
+    - 'Xanthomonas campestris'
+
+  roña_sarna:
+    - 'scab'
+    - 'Scab'
+    - 'roña'
+    - 'sarna'
+    - 'Elsinoe mangiferae'
+
+  pudricion_peduncular:
+    - 'stem_end_rot'
+    - 'Stem_End_Rot'
+    - 'Stem End Rot'
+    - 'pudricion'
+    - 'Lasiodiplodia theobromae'
+
+  variedad_amrapali:
+    - 'amrapali'
+    - 'Amrapali'
+
+  variedad_ashshina:
+    - 'ashshina_classic'
+    - 'Ashshina_Classic'
+    - 'ashshina_zhinuk'
+    - 'Ashshina_Zhinuk'
+
+  variedad_banana:
+    - 'banana_mango'
+    - 'Banana_Mango'
+
+  variedad_bari:
+    - 'bari-11'
+    - 'Bari-11'
+    - 'bari-4'
+    - 'Bari-4'
+
+  variedad_fazli:
+    - 'fazli_classic'
+    - 'Fazli_Classic'
+    - 'fazli_shurmai'
+    - 'Fazli_Shurmai'
+
+  variedad_gourmoti:
+    - 'gourmoti'
+    - 'Gourmoti'
+
+  variedad_harivanga:
+    - 'harivanga'
+    - 'Harivanga'
+
+  variedad_himsagor:
+    - 'himsagor'
+    - 'Himsagor'
+
+  variedad_katimon:
+    - 'katimon'
+    - 'Katimon'
+
+  variedad_langra:
+    - 'langra'
+    - 'Langra'
+
+  variedad_rupali:
+    - 'rupali'
+    - 'Rupali'
+
+  variedad_shada:
+    - 'shada'
+    - 'Shada'
+
+coarse_mapping:
+  patologico:
+    - antracnosis
+    - chancro_bacteriano
+    - roña_sarna
+    - pudricion_peduncular
+  sano_o_varietal:
+    - sano
+    - variedad_amrapali
+    - variedad_ashshina
+    - variedad_banana
+    - variedad_bari
+    - variedad_fazli
+    - variedad_gourmoti
+    - variedad_harivanga
+    - variedad_himsagor
+    - variedad_katimon
+    - variedad_langra
+    - variedad_rupali
+    - variedad_shada
+

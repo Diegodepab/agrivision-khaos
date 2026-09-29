@@ -1,0 +1,105 @@
+canonical_mapping:
+  aphid:
+    - aphid
+    - pulgon
+    - aphid_test
+    - aphid_valid
+  black_rust:
+    - black
+    - black_rust
+    - black_rust_test
+    - black_rust_valid
+    - stem_rust
+  blast:
+    - blast
+    - blast_test
+    - blast_test_valid
+    - wheat_blast
+  brown_rust:
+    - brown
+    - brown_rust
+    - brown_rust_test
+    - brown_rust_valid
+    - leaf_rust
+  common_root_rot:
+    - common
+    - common_root_rot
+    - common_root_rot_test
+    - common_root_rot_valid
+  fusarium_head_blight:
+    - fusarium
+    - fusarium_head_blight
+    - fusarium_head_blight_test
+    - fusarium_head_blight_valid
+    - scab
+  healthy:
+    - healthy
+    - healthy_test
+    - healthy_valid
+    - sano
+  leaf_blight:
+    - leaf
+    - leaf_blight
+    - leaf_blight_test
+    - leaf_blight_valid
+  mildew:
+    - mildew
+    - powdery_mildew
+    - mildew_test
+    - mildew_valid
+    - oidio
+  mite:
+    - mite
+    - mite_test
+    - mite_valid
+    - acaro
+  septoria:
+    - septoria
+    - septoria_test
+    - septoria_valid
+    - septoria_tritici_blotch
+  smut:
+    - smut
+    - loose_smut
+    - smut_test
+    - smut_valid
+    - carbon
+  stem_fly:
+    - stem
+    - stem_fly
+    - stem_fly_test
+    - stem_fly_valid
+    - sawfly
+  tan_spot:
+    - tan
+    - tan_spot
+    - tan_spot_test
+    - tan_spot_valid
+    - mancha_bronceada
+  yellow_rust:
+    - yellow
+    - yellow_rust
+    - yellow_rust_test
+    - yellow_rust_valid
+    - stripe_rust
+
+coarse_mapping:
+  fungal_disease:
+    - black_rust
+    - blast
+    - brown_rust
+    - common_root_rot
+    - fusarium_head_blight
+    - leaf_blight
+    - mildew
+    - septoria
+    - smut
+    - tan_spot
+    - yellow_rust
+  pest_damage:
+    - aphid
+    - mite
+    - stem_fly
+  healthy:
+    - healthy
+

@@ -1,0 +1,101 @@
+dataset: AvocadoFruit
+species: Aguacate (*Persea americana*)
+domain_title: Detección, Maduración Fenológica y Calidad del Fruto de Aguacate (*Persea
+  americana*)
+slug: dataset-de-imagenes-para-la-deteccion-maduracion-y-calidad-de-aguacate
+tags:
+- agriculture
+- agronomy
+- anthracnose
+- avocado
+- avocado-fruit
+- computer-vision
+- crop-quality
+- deep-learning
+- fruit-detection
+- fruit-ripening
+- hass-avocado
+- image-classification
+- machine-learning
+- object-detection
+- persea-americana
+- post-harvest
+- precision-agriculture
+- scab
+titles:
+  en: Image dataset for avocado fruit detection, phenological ripening stages, and
+    defect inspection (Persea americana)
+  es: Dataset de imágenes para la detección, maduración fenológica e inspección de
+    calidad del fruto de aguacate (Persea americana)
+resource:
+  name: Dataset de imágenes de fruto de aguacate (maduración y calidad) ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de fruto
+    de aguacate (Persea americana) organizadas en ImageFolder/COCO (train, val, test),
+    anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'A comprehensive image dataset of avocado fruit (*Persea americana*) intended
+    for artificial intelligence models in precision agriculture, automated post-harvest
+    grading, phenological ripening tracking, and phytopathological quality control.
+    It contains {total_images:,} images, integrating 3 open scientific repositories
+    (Campos-Ferreira & González-Camacho Agrociencia paper, Mendeley Hass Ripening
+    Photographic Dataset, and UC Riverside Roboflow in-field detection) after rigorous
+    curation. The dataset features a multi-attribute hierarchy: photographic monitoring
+    across 5 standardized Hass ripening stages (hard/unripe, breaking, firm ripe,
+    ready-to-eat, overripe), fine-grained defect and disease classification (healthy
+    fruit vs. scab/roña [*Sphaceloma perseae*] and anthracnose [*Colletotrichum*]),
+    and in-field fruit localization and segmentation on tree branches. Partitioned
+    into zero-leakage splits (80% train, 10% validation, 10% test). Can be used in
+    computer vision, deep learning, automated packing line sorting, smart harvesting
+    robotics, and food quality inspection.
+
+    The license is CC BY 4.0.'
+  es: 'Macro-conjunto de datos de imágenes de fruto de aguacate (*Persea americana*)
+    destinado al desarrollo de modelos de inteligencia artificial en agricultura de
+    precisión, calibración post-cosecha, seguimiento de maduración fenológica y control
+    fitopatológico de calidad. Contiene {total_images:,} imágenes procedentes de la
+    integración de 3 repositorios científicos abiertos (artículo en Agrociencia de
+    Campos-Ferreira y González-Camacho, Dataset Fotográfico Mendeley de Maduración
+    Hass y detección en campo de UC Riverside en Roboflow) tras un riguroso control
+    de calidad. Presenta una jerarquía multi-atributo: clasificación en 5 estadíos
+    estandarizados de maduración Hass (inmaduro duro, viraje, maduro firme, listo
+    para consumo y sobremaduro), clasificación de defectos y patologías comerciales
+    (fruto sano frente a roña [*Sphaceloma perseae*] y antracnosis [*Colletotrichum*])
+    y detección/segmentación espacial de fruto en árbol. Particionado sin fuga de
+    datos (80% entrenamiento, 10% validación, 10% test). Puede utilizarse en visión
+    artificial, calibradoras ópticas agroalimentarias, robótica de recolección y control
+    de calidad.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza el fruto de aguacate bajo una ontología
+  multi-atributo:
+
+  - **Estadíos de Maduración Fenológica:** Clasificación en 5 fases estandarizadas
+  de firmeza e índice de maduración Hass (`inmaduro_duro`, `viraje_color`, `maduro_firme`,
+  `maduro_consumo`, `sobremaduro`).
+
+  - **Inspección de Calidad Fitosanitaria y Defectos:** Discriminación entre fruto
+  sano (`sano`) frente a patologías comerciales: roña/sarna (`sarna_rona` / *Sphaceloma
+  perseae*) y antracnosis (`antracnosis` / *Colletotrichum*).
+
+  - **Localización Espacial en Árbol:** Detección y delimitación de instancias de
+  `aguacate` en condiciones naturales de huerto.'
+condition_map:
+  sano: Sano / Apto
+  sarna_rona: Defecto / Roña
+  antracnosis: Defecto / Antracnosis
+  inmaduro_duro: Maduración / Duro
+  viraje_color: Maduración / Viraje
+  maduro_firme: Maduración / Firme
+  maduro_consumo: Maduración / Listo consumo
+  sobremaduro: Maduración / Senescente
+  aguacate: Localización general
+scientific_names:
+  sano: Aguacate sano apto para comercialización
+  sarna_rona: Sphaceloma perseae
+  antracnosis: Colletotrichum gloeosporioides
+  inmaduro_duro: Estadío Hass 1 (Duro / Verde inmaduro)
+  viraje_color: Estadío Hass 2 (Inicio de viraje)
+  maduro_firme: Estadío Hass 3 (Maduro firme)
+  maduro_consumo: Estadío Hass 4 (Listo para el consumo)
+  sobremaduro: Estadío Hass 5 (Sobremaduro / Senescente)
+  aguacate: Detección de fruto en copa/árbol

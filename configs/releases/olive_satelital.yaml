@@ -1,0 +1,78 @@
+dataset: OliveSatelital
+species: Olivo (*Olea europaea*)
+domain_title: Teledetección, Detección de Copas y Estado Fitosanitario Aéreo del Olivo
+  (*Olea europaea*)
+slug: dataset-de-imagenes-aereas-y-uav-para-la-deteccion-de-copas-y-sanidad-de-olivar
+tags:
+- aerial-imagery
+- agriculture
+- computer-vision
+- crop-monitoring
+- deep-learning
+- drone
+- image-classification
+- machine-learning
+- object-detection
+- olive
+- olive-trees
+- precision-agriculture
+- remote-sensing
+- tree-crown-detection
+- uav
+titles:
+  en: Aerial and UAV imagery dataset for olive tree crown detection and canopy health
+    assessment (Olea europaea)
+  es: Dataset de imágenes aéreas y UAV para la detección de copas de olivo y evaluación
+    del estado fitosanitario (Olea europaea)
+resource:
+  name: Dataset de imágenes aéreas y UAV de olivar (detección de copas y sanidad)
+    ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes aéreas y
+    UAV de olivar (Olea europaea) organizadas en COCO y YOLO (train, val, test), anotaciones
+    limpias en labels.csv y reporte de calidad en preprocess/.
+descriptions:
+  en: 'An aerial and UAV image dataset of olive orchards (*Olea europaea*) intended
+    for artificial intelligence models in precision agriculture, tree crown detection,
+    canopy counting, and fire/drought damage assessment. It contains {total_images:,}
+    images, integrating 3 open scientific repositories (ICAERUS Horizon Europe, OliveTreeCrownsDb,
+    and UAV Burned Olive Trees) after rigorous quality curation, spatial scale harmonization,
+    and visual deduplication. The dataset combines spatial bounding boxes for individual
+    olive tree crown localization (standardized 640–960px scale for YOLO/COCO models)
+    and canopy health status classification (healthy vs. burned/dry trees). Partitioned
+    into zero-leakage splits (80% train, 10% validation, 10% test). The dataset can
+    be used in computer vision, remote sensing, drone-based aerial monitoring, agricultural
+    robotics, and wildfire damage assessment.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes aéreas y de drones (UAV) de olivares (*Olea europaea*)
+    destinado al desarrollo y evaluación de modelos de inteligencia artificial en
+    agricultura de precisión, detección y conteo de copas de árboles y evaluación
+    de daños por incendio o sequía. Contiene {total_images:,} imágenes procedentes
+    de la integración de 3 repositorios científicos abiertos (ICAERUS Horizon Europe,
+    OliveTreeCrownsDb y UAV Burned Olive Trees) tras un exhaustivo filtrado de calidad,
+    armonización de escala espacial y deduplicación visual. Combina cajas delimitadoras
+    (bounding boxes en formato YOLO/COCO) para la detección precisa de copas de olivo
+    a escala aérea estandarizada (640–960 px) y clasificación de estado fitosanitario
+    del dosel (árboles sanos frente a secos o dañados por fuego). Particionado sin
+    fuga de datos (80% entrenamiento, 10% validación, 10% test). Puede utilizarse
+    en visión artificial, teledetección, monitorización aérea con drones, robótica
+    agrícola y evaluación del impacto de incendios.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza la teledetección aérea bajo una ontología
+  unificada:
+
+  - **Detección y Conteo de Copas:** Localización espacial de árboles de olivo (`olivo`)
+  a partir de ortofotos y vuelos UAV de alta resolución.
+
+  - **Evaluación Fitosanitaria Aérea:** Clasificación del estado del dosel arbóreo
+  entre olivar sano (`sano`) y olivar quemado o severamente afectado por incendios
+  (`quemado`).'
+condition_map:
+  olivo: Copa / Árbol
+  sano: Sano / Vigoroso
+  quemado: Dañado / Fuego
+scientific_names:
+  olivo: Detección de copa de Olea europaea
+  sano: Dosel vegetal vigoroso y sano
+  quemado: Dosel dañado por incendio o desecación

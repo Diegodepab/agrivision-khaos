@@ -1,0 +1,82 @@
+# ==============================================================================
+# AgriVision-KHAOS: Ontología Multi-Atributo de Fruto de Aguacate
+# ==============================================================================
+# Unifica maduración fenológica Hass, calidad fitopatológica y detección en árbol.
+# ==============================================================================
+
+classes:
+  # Calidad fitopatológica (Estudio Chapingo)
+  sano:
+    - 'Healthy'
+    - 'healthy'
+    - 'sano'
+    - 'sana'
+
+  sarna_rona:
+    - 'Scab'
+    - 'scab'
+    - 'rona'
+    - 'roña'
+    - 'sarna'
+    - 'sphaceloma_perseae'
+
+  antracnosis:
+    - 'Anthracnose'
+    - 'anthracnose'
+    - 'colletotrichum'
+    - 'colletotrichum_gloeosporioides'
+
+  # Estadíos de maduración fenológica (Estudio Hass Photographic Dataset)
+  inmaduro_duro:
+    - 'stage_1_hard'
+    - 'stage_1'
+    - 'hard'
+    - 'inmaduro_duro'
+
+  viraje_color:
+    - 'stage_2_breaking'
+    - 'stage_2'
+    - 'breaking'
+    - 'viraje'
+
+  maduro_firme:
+    - 'stage_3_ripe'
+    - 'stage_3'
+    - 'ripe'
+    - 'maduro_firme'
+
+  maduro_consumo:
+    - 'stage_4_firm_ripe'
+    - 'stage_4'
+    - 'firm_ripe'
+    - 'ready_to_eat'
+    - 'Avocado-Ripe_Avocado'
+
+  sobremaduro:
+    - 'stage_5_overripe'
+    - 'stage_5'
+    - 'overripe'
+    - 'sobremaduro'
+
+  # Detección y localización en árbol
+  aguacate:
+    - 'Avocado'
+    - 'avocado'
+    - 'aguacate'
+
+coarse_mapping:
+  sano:
+    - sano
+  defectuoso:
+    - sarna_rona
+    - antracnosis
+  inmaduro:
+    - inmaduro_duro
+    - viraje_color
+  maduro:
+    - maduro_firme
+    - maduro_consumo
+  sobremaduro:
+    - sobremaduro
+  aguacate:
+    - aguacate

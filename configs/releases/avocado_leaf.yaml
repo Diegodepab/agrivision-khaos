@@ -1,0 +1,77 @@
+dataset: AvocadoLeaf
+species: Aguacate (*Persea americana*)
+domain_title: Detección y Clasificación de Enfermedades Foliares del Aguacatero (*Persea
+  americana*)
+slug: dataset-de-imagenes-para-la-deteccion-de-enfermedades-en-hojas-de-aguacate
+tags:
+- agriculture
+- agronomy
+- avocado
+- avocado-leaves
+- cercospora
+- computer-vision
+- crop-disease
+- deep-learning
+- disease-detection
+- healthy-plants
+- image-classification
+- machine-learning
+- persea-americana
+- plant-disease
+- plant-pathology
+- precision-agriculture
+titles:
+  en: Image dataset for disease detection and health diagnosis in avocado leaves (Persea
+    americana)
+  es: Dataset de imágenes para la detección y diagnóstico de enfermedades en hojas
+    de aguacate (Persea americana)
+resource:
+  name: Dataset de imágenes de enfermedades en hojas de aguacate ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de hojas
+    de aguacate (Persea americana) organizadas en ImageFolder estándar (train, val,
+    test), anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of avocado leaves (*Persea americana*) intended for the development
+    and evaluation of artificial intelligence models for plant disease detection,
+    classification, and foliar health diagnosis. It contains {total_images:,} images
+    in PNG/JPG format, integrating open scientific field collections from Tanzania
+    and India (Zenodo and Mendeley/NIH) after rigorous quality auditing and removal
+    of synthetic augmentations. The dataset features a standardized taxonomic structure:
+    classification across healthy avocado leaves, Cercospora leaf spot (*Pseudocercospora
+    purpurea*), and general diseased foliar symptoms, along with a derived binary
+    condition (healthy vs. diseased). Partitioned into zero-leakage splits (80% train,
+    10% validation, 10% test). The dataset can be used in computer vision, deep learning,
+    smart agriculture, drone-based orchard scouting, and automated plant disease diagnosis.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de hojas de aguacatero (*Persea americana*) destinado
+    al desarrollo y evaluación de modelos de inteligencia artificial para la detección,
+    clasificación y diagnóstico de enfermedades vegetales foliares. Contiene {total_images:,}
+    imágenes en formato PNG/JPG, integrando colecciones científicas abiertas de campo
+    de Tanzania e India (Zenodo y Mendeley/NIH) tras un estricto filtrado de calidad
+    y eliminación completa de aumentaciones sintéticas. Presenta una estructura taxonómica
+    estandarizada: clasificación entre hojas sanas, mancha foliar por Cercospora (*Pseudocercospora
+    purpurea*) y sintomatología patológica general, junto a un diagnóstico binario
+    derivado (sano frente a enfermo). Particionado sin fuga de datos (80% entrenamiento,
+    10% validación, 10% test). Puede utilizarse en visión artificial, aprendizaje
+    profundo, agricultura de precisión, monitorización foliar y fitopatología.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza las patologías del aguacatero bajo una
+  ontología fitopatológica unificada:
+
+  - **Condición Fitosanitaria:** Clasificación diagnóstica entre hojas sanas (`sano`),
+  hojas afectadas por mancha foliar de Cercospora (`cercospora` / *Pseudocercospora
+  purpurea*) y síntomas patológicos inespecíficos (`enfermo`).
+
+  - **Evaluación Binaria:** Para modelos de cribado binario en campo o dron foliar,
+  toda clase distinta de `sano` se proyecta a la condición `enfermo` (indicado en
+  `annotations/labels.csv`).'
+condition_map:
+  sano: Sano
+  cercospora: Enfermo
+  enfermo: Enfermo
+scientific_names:
+  sano: Hojas de Persea americana sanas y vigorosas
+  cercospora: Pseudocercospora purpurea
+  enfermo: Sintomatología foliar patológica / clorosis

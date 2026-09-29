@@ -1,0 +1,82 @@
+dataset: OliveFruit
+species: Olivo (*Olea europaea*)
+domain_title: Detección, Maduración y Calidad del Fruto del Olivo (*Olea europaea*)
+slug: dataset-de-imagenes-para-la-deteccion-madurez-y-calidad-de-fruto-de-olivo
+tags:
+- agriculture
+- agronomy
+- computer-vision
+- deep-learning
+- fruit-detection
+- image-classification
+- machine-learning
+- object-detection
+- olive
+- olive-fruit
+- olive-ripening
+- olives
+- post-harvest
+- precision-agriculture
+titles:
+  en: Image dataset for olive fruit detection, ripening stage identification, and
+    defect inspection (Olea europaea)
+  es: Dataset de imágenes para la detección, maduración e inspección de calidad del
+    fruto del olivo (Olea europaea)
+resource:
+  name: Dataset de imágenes de fruto de olivo (detección, madurez y calidad) ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de aceitunas
+    (Olea europaea) organizadas en COCO y YOLO (train, val, test), anotaciones limpias
+    en labels.csv y reporte de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of olive fruits (*Olea europaea*) intended for artificial
+    intelligence models in precision agriculture, smart harvesting, optical yield
+    estimation, and post-harvest quality sorting. It contains {total_images:,} images,
+    integrating 7 open scientific repositories from Roboflow Universe and GitHub after
+    rigorous visual curation, duplicate elimination, and bounding box harmonization.
+    The dataset features a multi-attribute hierarchy: phenological ripening stages
+    (green, turning/veraison, black ripe), commercial quality and health inspection
+    (healthy vs. defective/damaged fruit), and universal object detection under natural
+    field and harvesting conditions. Partitioned into zero-leakage splits (80% train,
+    10% validation, 10% test). The dataset can be used in computer vision, deep learning,
+    automated optical sorting machinery, agricultural robotics, and yield estimation.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de fruto de olivo (aceituna, *Olea europaea*)
+    destinado al desarrollo y evaluación de modelos de inteligencia artificial en
+    agricultura de precisión, recolección automatizada, aforo de cosecha e inspección
+    de calidad post-cosecha. Contiene {total_images:,} imágenes procedentes de la
+    integración de 7 repositorios científicos abiertos de Roboflow Universe y GitHub
+    tras una estricta curación de calidad, descarte de duplicados y armonización de
+    cajas delimitadoras. Presenta una jerarquía multi-atributo: estados fenológicos
+    de maduración (verde, envero, negra), inspección fitosanitaria y de defectos comerciales
+    (sana frente a defectuosa/dañada) y detección espacial universal de frutos en
+    árbol y líneas de calibrado. Particionado sin fuga de datos (80% entrenamiento,
+    10% validación, 10% test). Puede utilizarse en visión artificial, aprendizaje
+    profundo, calibradoras ópticas industriales, robótica agrícola y estimación de
+    rendimiento en campo.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza las anotaciones bajo una ontología multi-atributo:
+
+  - **Fenología de Maduración:** `verde` (inmadura), `envero` (en maduración), `negra`
+  (madura).
+
+  - **Inspección de Calidad y Sanidad:** `sana` vs `defectuosa` (dañada por plagas,
+  hongos o mecánicamente).
+
+  - **Detección Genérica Universal:** Toda instancia de fruto es interoperable bajo
+  la clase `aceituna` para modelos de conteo y localización.'
+condition_map:
+  sana: Sano / Apta
+  defectuosa: Defecto / Descarte
+  verde: Maduración / Verde
+  envero: Maduración / Envero
+  negra: Maduración / Negra
+  aceituna: Localización general
+scientific_names:
+  sana: Aceituna sana comercial
+  defectuosa: Aceituna dañada o con defectos
+  verde: Fruto en fase verde
+  envero: Fruto en fase de envero
+  negra: Fruto maduro negro
+  aceituna: Detección genérica de aceituna

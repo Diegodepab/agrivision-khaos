@@ -1,0 +1,65 @@
+dataset: WheatHead
+species: Trigo (*Triticum aestivum*)
+domain_title: Detección, Conteo y Fenotipado Espacial de Espigas de Trigo (*Triticum
+  aestivum*)
+slug: dataset-de-imagenes-para-la-deteccion-y-conteo-de-espigas-de-trigo
+tags:
+- agriculture
+- agronomy
+- cereal
+- computer-vision
+- crop-monitoring
+- deep-learning
+- object-detection
+- phenotyping
+- precision-agriculture
+- triticum-aestivum
+- wheat
+- wheat-head-detection
+- yield-estimation
+titles:
+  en: Global image dataset for wheat head detection and in-field phenotyping (Triticum
+    aestivum)
+  es: Dataset internacional de imágenes para la detección y conteo de espigas de trigo
+    en campo (Triticum aestivum)
+resource:
+  name: Dataset de imágenes de espigas de trigo (detección y conteo) ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de espigas
+    de trigo (Triticum aestivum) organizadas en COCO y YOLO (train, val, test), anotaciones
+    limpias en labels.csv y reporte de calidad en preprocess/.
+descriptions:
+  en: 'A global benchmark image dataset of field-grown wheat (*Triticum aestivum*)
+    intended for computer vision and deep learning models in precision agriculture,
+    yield estimation, automated phenotyping, and spike detection. It contains {total_images:,}
+    high-resolution field images, integrating the international Global Wheat Head
+    Dataset (GWHD 2021) consortium spanning 12 countries, diverse growth stages, cultivars,
+    and illumination conditions. Features spatial bounding box annotations in COCO
+    and YOLO formats for individual wheat head detection. Partitioned into zero-leakage
+    splits (80% train, 10% validation, 10% test).
+
+    The license is CC BY-SA 4.0.'
+  es: 'Benchmark internacional de imágenes de trigo en campo (*Triticum aestivum*)
+    destinado al desarrollo y validación de modelos de visión artificial y aprendizaje
+    profundo en agricultura de precisión, aforo de cosecha, fenotipado automatizado
+    y detección de espigas. Contiene {total_images:,} imágenes de alta resolución
+    procedentes del consorcio internacional Global Wheat Head Dataset (GWHD 2021),
+    abarcando 12 países, múltiples cultivares, estadíos de desarrollo y condiciones
+    de iluminación. Dispone de cajas delimitadoras en formatos COCO y YOLO para detección
+    de espigas individuales. Particionado sin fuga de datos (80% entrenamiento, 10%
+    validación, 10% test).
+
+    La licencia es CC BY-SA 4.0.'
+ontology_explanation: 'El dataset organiza la detección de espigas de trigo bajo una
+  ontología unificada:
+
+  - **Detección y Localización:** Localización espacial de espigas de trigo (`wheat_head`
+  / `espiga`) en canopia densa.
+
+  - **Conteo y Fenotipado:** Aforo automatizado de densidad de espigas por metro cuadrado
+  para estimación precoz de rendimiento de grano.'
+condition_map:
+  wheat_head: Espiga de trigo
+  espiga: Espiga de trigo
+scientific_names:
+  wheat_head: Espiga de Triticum aestivum
+  espiga: Espiga de Triticum aestivum

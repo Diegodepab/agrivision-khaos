@@ -5,7 +5,31 @@
 
 Este repositorio proporciona una infraestructura dockerizada y estandarizada para limpiar, deduplicar y enriquecer datasets masivos de imágenes (como patologías foliares) antes de alimentar cualquier red neuronal.
 
-## 🚀 Inicio Rápido
+## ⚡ Modo Autónomo con un solo comando (`make run`)
+
+Para procesar, curar y empaquetar cualquier nuevo dataset agrícola de forma totalmente desatendida sin tener que editar archivos YAML ni configurar ontologías manualmente:
+
+```bash
+# Modo interactivo por consola (detecta carpetas y te guía paso a paso):
+make run
+
+# O modo directo desatendido:
+make run DATASET="MiCultivo" RAW_DIR="data/raw/MiCultivo"
+```
+
+El asistente realiza todo el ciclo de vida:
+1. **Auditoría e Ingesta:** Valida las imágenes crudas y su integridad.
+2. **Quality-First:** Detecta y filtra imágenes desenfocadas, corruptas o atípicas.
+3. **Deduplicación & Anti-Leakage:** Elimina duplicados perceptuales/exactos y audita los splits para evitar fuga de datos (*visual leakage*) entre Train, Val y Test.
+4. **Auto-Ontología:** Normaliza clases de las carpetas y resuelve erratas de etiquetado automáticamente.
+5. **Auto-Empaquetado Open Data (< 2 GB):** Genera el bundle estándar (`train/val/test`, `labels.csv`, `README.md`, `SOURCES.md`, informe interactivo, `_v1.0.zip` y `.sha256`), optimizando automáticamente las imágenes si exceden el límite de 2 GB de CKAN.
+6. **Ficha CKAN:** Redacta `_CKAN_METADATA.md` con metadatos bilingües (ES/EN) listo para publicar en el portal.
+
+### 🧹 Limpieza de Disco y Mantenimiento
+- `make clean-cache`: Libera los archivos de caché pesados (embeddings temporales de deduplicación) para mantener el repositorio ligero (~30 MB) sin tocar tus releases.
+- `make clean-all`: Limpieza profunda completa (contenedores, volúmenes de base de datos MongoDB, reportes pasados y caché de embeddings).
+
+## 🚀 Inicio Rápido Avanzado
 
 Todo el ecosistema está encapsulado en Docker y se controla a través de nuestro `Makefile`.
 El runtime usa Python 3.13, dentro de la matriz soportada oficialmente por FiftyOne.
@@ -16,12 +40,8 @@ Si el host dispone de una GPU NVIDIA compatible con CUDA 13.0, construye con
 `uv sync --extra cpu` o `uv sync --extra cu130`; ambos perfiles son excluyentes.
 
 1. Clona el repositorio y copia el entorno: `cp .env.example .env`.
-2. Coloca cada fuente en una subcarpeta distinta de `data/raw/` y añade su
-   `source.yaml` cuando necesites declarar licencia, dominio o versión.
-3. Ejecuta `make preflight` y después `make dry-run`.
-4. Lanza `make pipeline`; el perfil predeterminado funciona sin descargar modelos.
-5. Revisa `reports/pipeline/`, resuelve los casos `review` en la interfaz con
-   `make app` y publica la selección con `make export`.
+2. Coloca cada fuente en una subcarpeta de `data/raw/`.
+3. Ejecuta `make run` para el asistente interactivo o `make pipeline` para el flujo granular manual.
 
 ### Validación rápida sin datasets pesados
 

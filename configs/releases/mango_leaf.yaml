@@ -1,0 +1,97 @@
+dataset: MangoLeaf
+species: Mango (*Mangifera indica*)
+domain_title: Detección y Clasificación de Patologías Foliares del Mango (*Mangifera
+  indica*)
+slug: dataset-de-imagenes-para-la-deteccion-de-enfermedades-en-hojas-de-mango
+tags:
+- agriculture
+- agronomy
+- anthracnose
+- bacterial-canker
+- computer-vision
+- crop-disease
+- deep-learning
+- gall-midge
+- healthy-plants
+- image-classification
+- machine-learning
+- mangifera-indica
+- mango
+- mango-leaves
+- plant-pathology
+- powdery-mildew
+- precision-agriculture
+titles:
+  en: Image dataset for disease detection and foliar pathology diagnosis in mango
+    leaves (Mangifera indica)
+  es: Dataset de imágenes para la detección y diagnóstico de patologías foliares en
+    hojas de mango (Mangifera indica)
+resource:
+  name: Dataset de imágenes de enfermedades en hojas de mango ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de hojas
+    de mango (Mangifera indica) organizadas en ImageFolder estándar (train, val, test),
+    anotaciones limpias en labels.csv y reporte interactivo de calidad en preprocess/.
+descriptions:
+  en: 'An image dataset of mango leaves (*Mangifera indica*) intended for the development
+    and evaluation of artificial intelligence models for foliar disease detection,
+    pest symptom recognition, and phytopathological diagnosis. It contains {total_images:,}
+    images in high resolution, integrating 2 open scientific repositories from Mendeley
+    Data (MLD24 and SAR-MLD1-2025) after rigorous curation and quality auditing. The
+    dataset features a standardized taxonomic structure across 9 fine-grained classes:
+    healthy leaves, anthracnose (*Colletotrichum gloeosporioides*), powdery mildew
+    (*Oidium mangiferae*), gall midge (*Procontarinia matteiana*), bacterial canker
+    (*Xanthomonas campestris*), die back (*Lasiodiplodia theobromae*), sooty mould
+    (*Capnodium mangiferae*), cutting weevil (*Deporaus marginatus*), and foliar necrosis/browning.
+    Partitioned into zero-leakage splits (80% train, 10% validation, 10% test). The
+    dataset can be used in computer vision, deep learning, precision agriculture,
+    drone-based canopy monitoring, and automated plant disease diagnosis.
+
+    The license is CC BY 4.0.'
+  es: 'Conjunto de datos de imágenes de hojas de mango (*Mangifera indica*) destinado
+    al desarrollo y evaluación de modelos de inteligencia artificial para la detección
+    de enfermedades foliares, identificación de plagas y diagnóstico fitopatológico.
+    Contiene {total_images:,} imágenes de alta resolución, integrando 2 repositorios
+    científicos abiertos de Mendeley Data (MLD24 y SAR-MLD1-2025) tras una estricta
+    auditoría de calidad y estandarización taxonómica. Presenta una estructura organizada
+    en 9 clases canónicas: hojas sanas, antracnosis (*Colletotrichum gloeosporioides*),
+    oídio (*Oidium mangiferae*), mosquilla de las agallas (*Procontarinia matteiana*),
+    chancro bacteriano (*Xanthomonas campestris*), muerte regresiva (*Lasiodiplodia
+    theobromae*), fumagina (*Capnodium mangiferae*), gorgojo cortador (*Deporaus marginatus*)
+    y necrosis foliar. Particionado sin fuga de datos (80% entrenamiento, 10% validación,
+    10% test). Puede utilizarse en visión artificial, aprendizaje profundo, agricultura
+    de precisión y teledetección foliar.
+
+    La licencia es CC BY 4.0.'
+ontology_explanation: 'El dataset organiza las patologías foliares del mango bajo
+  una ontología fitopatológica unificada:
+
+  - **Diagnóstico Fitopatológico Multiclase:** Clasificación en 9 clases canónicas:
+  hojas sanas (`sano`), antracnosis (`antracnosis` / *Colletotrichum gloeosporioides*),
+  oídio (`oidio` / *Oidium mangiferae*), mosquilla de las agallas (`mosquilla_agallas`
+  / *Procontarinia matteiana*), chancro bacteriano (`chancro_bacteriano` / *Xanthomonas
+  campestris*), muerte regresiva (`muerte_regresiva` / *Lasiodiplodia theobromae*),
+  fumagina (`fumagina` / *Capnodium mangiferae*), gorgojo cortador (`gorgojo_cortador`
+  / *Deporaus marginatus*) y necrosis foliar (`necrosis_foliar`).
+
+  - **Evaluación Binaria Fitosanitaria:** Para cribado rápido en campo o teledetección
+  foliar, se proporciona una agrupación binaria (sano vs patológico) en `annotations/labels.csv`.'
+condition_map:
+  sano: Sano / Asintomático
+  antracnosis: Patológico / Antracnosis
+  oidio: Patológico / Oídio
+  mosquilla_agallas: Patológico / Mosquilla de las agallas
+  chancro_bacteriano: Patológico / Chancro bacteriano
+  muerte_regresiva: Patológico / Muerte regresiva
+  fumagina: Patológico / Fumagina
+  gorgojo_cortador: Patológico / Gorgojo cortador
+  necrosis_foliar: Patológico / Necrosis foliar
+scientific_names:
+  sano: Hojas de Mangifera indica sanas y vigorosas
+  antracnosis: Colletotrichum gloeosporioides
+  oidio: Oidium mangiferae
+  mosquilla_agallas: Procontarinia matteiana
+  chancro_bacteriano: Xanthomonas campestris pv. mangiferaeindicae
+  muerte_regresiva: Lasiodiplodia theobromae
+  fumagina: Capnodium mangiferae
+  gorgojo_cortador: Deporaus marginatus
+  necrosis_foliar: Senescencia y desecación foliar perimetral

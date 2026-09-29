@@ -271,10 +271,24 @@ def compute_resolution(
     min_valid_size: int = MIN_VALID_SIZE,
 ) -> dict[str, int | bool]:
     h, w = image_bgr.shape[:2]
+    min_dim = min(h, w)
+    max_dim = max(h, w)
+    # Una imagen presenta baja resolución si su dimensión mayor no alcanza min_valid_size,
+    # o si su dimensión menor es severamente reducida (< 112px o área < min_valid_size * 112).
+    # Esto preserva recortes de hojas individuales y frutos elongados (típicos en datasets segmentados
+    # sin fondo) que cuentan con resolución suficiente a lo largo de su eje principal (>300px),
+    # descartando al mismo tiempo miniaturas e iconos reales.
+    min_short_edge = min(112, max(64, min_valid_size // 2))
+    min_area = min_valid_size * min_short_edge
+    is_low_res = bool(
+        max_dim < min_valid_size
+        or min_dim < min_short_edge
+        or (h * w) < min_area
+    )
     return {
         "height": h,
         "width": w,
-        "low_resolution": bool(min(h, w) < min_valid_size),
+        "low_resolution": is_low_res,
     }
 
 

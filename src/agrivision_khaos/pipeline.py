@@ -1453,7 +1453,16 @@ def load_ontology_mapping(path: str | Path) -> dict[str, str]:
         raise ValueError("La ontología debe ser un mapa canonical_label: [source_labels]")
 
     mapping: dict[str, str] = {}
-    for target, originals in payload.items():
+    classes_section = (
+        payload.get("canonical_mapping")
+        if isinstance(payload.get("canonical_mapping"), dict)
+        else payload.get("classes")
+        if isinstance(payload.get("classes"), dict)
+        else payload.get("fine")
+        if isinstance(payload.get("fine"), dict)
+        else payload
+    )
+    for target, originals in classes_section.items():
         canonical = normalize_label(str(target))
         if not canonical or not isinstance(originals, list) or not originals:
             raise ValueError(
@@ -2067,7 +2076,7 @@ def reconcile_visual_splits(
     cache: DescriptorCache,
     rejected_pairs: Any = (),
 ) -> int:
-    """Detects confirmed visual variants crossing splits and unifies their split to prevent data leakage."""
+    """Detects confirmed visual variants crossing splits and unifies their split using connected components (Union-Find) to guarantee zero data leakage."""
     audit_policy = policy.model_copy(
         update={
             "candidate_neighbors": min(200, policy.candidate_neighbors * 2),
@@ -2083,39 +2092,67 @@ def reconcile_visual_splits(
     for sample in dataset.select(list(assignments)):
         sample_to_group[sample.id] = sample_field(sample, "split_group_id", sample.id)
 
+    # 1. Initialize Union-Find
+    parent = {s: s for s in assignments}
+
+    def find(i: str) -> str:
+        path = []
+        while parent[i] != i:
+            path.append(i)
+            i = parent[i]
+        for node in path:
+            parent[node] = i
+        return i
+
+    def union(i: str, j: str) -> None:
+        root_i = find(i)
+        root_j = find(j)
+        if root_i != root_j:
+            parent[root_i] = root_j
+
+    # Samples sharing split_group_id must stay in the same split
     group_to_samples = defaultdict(list)
     for sample_id, group_id in sample_to_group.items():
-        group_to_samples[group_id].append(sample_id)
+        if sample_id in parent:
+            group_to_samples[group_id].append(sample_id)
 
-    split_priority = {"train": 0, "val": 1, "test": 2}
-    reconciled = 0
+    for members in group_to_samples.values():
+        first = members[0]
+        for m in members[1:]:
+            union(first, m)
 
+    # 2. Check all candidate pairs and union confirmed visual variants
     for left, right in candidates:
-        if assignments.get(left) == assignments.get(right) or frozenset((left, right)) in rejected:
-            continue
         if left not in assignments or right not in assignments:
+            continue
+        if frozenset((left, right)) in rejected:
+            continue
+        if find(left) == find(right):
             continue
         evidence = cache.verify(descriptors[left], descriptors[right], audit_policy)
         if evidence["level"] in CONFIRMED_LEVELS:
-            left_group = sample_to_group.get(left, left)
-            right_group = sample_to_group.get(right, right)
-            left_split = assignments[left]
-            right_split = assignments[right]
-            target_split = left_split if split_priority.get(left_split, 9) <= split_priority.get(right_split, 9) else right_split
+            union(left, right)
 
-            all_members = set(group_to_samples[left_group] + group_to_samples[right_group])
-            for member in all_members:
-                assignments[member] = target_split
+    # 3. For each connected component, determine target split with highest priority
+    split_priority = {"train": 0, "val": 1, "test": 2}
+    components = defaultdict(list)
+    for sample_id in assignments:
+        components[find(sample_id)].append(sample_id)
 
-            merged_members = list(all_members)
-            group_to_samples[left_group] = merged_members
-            group_to_samples[right_group] = merged_members
-
-            reconciled += 1
-            logger.warning(
-                "Fuga visual prevenida: unificando partición para pareja confirmada %s (%s) y %s (%s) en '%s'",
-                left, left_split, right, right_split, target_split
-            )
+    reconciled = 0
+    for root, members in components.items():
+        current_splits = {assignments[m] for m in members}
+        if len(current_splits) > 1:
+            target_split = min(current_splits, key=lambda s: split_priority.get(s, 9))
+            for m in members:
+                if assignments[m] != target_split:
+                    old_split = assignments[m]
+                    assignments[m] = target_split
+                    reconciled += 1
+                    logger.warning(
+                        "Fuga visual prevenida: unificando partición para muestra %s (%s -> '%s')",
+                        m, old_split, target_split
+                    )
 
     if reconciled > 0:
         for sample in dataset.select(list(assignments)).iter_samples(autosave=True):

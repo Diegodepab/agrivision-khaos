@@ -1,0 +1,81 @@
+dataset: WheatDisease
+species: Trigo (*Triticum aestivum*)
+domain_title: Diagnóstico Fitopatológico Multiclase en Trigo (*Triticum aestivum*)
+slug: dataset-de-imagenes-para-el-diagnostico-de-enfermedades-y-plagas-en-trigo
+tags:
+- agriculture
+- agronomy
+- cereal
+- computer-vision
+- crop-protection
+- deep-learning
+- fungal-diseases
+- plant-pathology
+- precision-agriculture
+- rust-diseases
+- triticum-aestivum
+- wheat
+- wheat-diseases
+titles:
+  en: High-resolution image dataset for wheat disease and pest diagnosis (Triticum aestivum)
+  es: Dataset de imágenes de alta resolución para el diagnóstico de enfermedades y plagas en trigo (Triticum aestivum)
+resource:
+  name: Dataset de imágenes de patologías y plagas del trigo ZIP
+  description: Conjunto de datos compuesto por {total_images:,} imágenes de alta resolución
+    de trigo (Triticum aestivum) clasificadas en 15 categorías patológicas y fitosanitarias,
+    particionado en train, val y test, con etiquetas armonizadas en labels.csv y reporte de calidad.
+descriptions:
+  en: 'A high-resolution image dataset of field-grown wheat (*Triticum aestivum*)
+    intended for computer vision, plant pathology, and precision agriculture. It integrates
+    {total_images:,} curated images across 15 distinct phytopathological and entomological
+    categories, including major rust fungi (black rust, brown rust, yellow rust), blights
+    (fusarium head blight, leaf blight, blast), spot diseases (septoria blotch, tan spot),
+    smut, mildew, root rot, insect pests (aphids, mites, stem fly), and healthy reference tissue.
+    Harmonized under a standardized agronomical ontology and partitioned into zero-leakage
+    splits (80% train, 10% validation, 10% test).
+
+    The license is CC BY 4.0 International.'
+  es: 'Benchmark de imágenes de alta resolución de trigo (*Triticum aestivum*) destinado
+    al desarrollo de modelos de visión artificial, diagnóstico fitopatológico precoz
+    y agricultura de precisión. Integra {total_images:,} imágenes curadas que cubren
+    15 categorías patológicas y entomológicas críticas en cerealicultura: royas mayores
+    (roya negra, roya parda, roya amarilla), tizones y fusariosis (fusariosis de la espiga,
+    tizón foliar, piricularia/blast), manchas foliares (septoriosis, mancha bronceada/tan spot),
+    oídio, carbón suelto, podredumbre común de la raíz, daños por plagas (pulgones, ácaros,
+    mosca del tallo) y tejido sano de referencia. Estandarizado bajo una ontología agronómica
+    jerárquica y particionado sin fuga de datos (80% entrenamiento, 10% validación, 10% test).
+
+    La licencia es CC BY 4.0 International.'
+ontology_explanation: 'El dataset organiza las patologías del trigo bajo una ontología jerárquica estandarizada:
+
+  - **Enfermedades Fúngicas (`fungal_disease`):** Royas (`black_rust`, `brown_rust`, `yellow_rust`),
+    fusariosis (`fusarium_head_blight`), tizones (`leaf_blight`, `blast`), manchas (`septoria`, `tan_spot`),
+    oídio (`mildew`), carbón (`smut`) y podredumbre radicular (`common_root_rot`).
+
+  - **Daños por Plagas y Artrópodos (`pest_damage`):** Pulgones (`aphid`), ácaros (`mite`)
+    y dípteros barrenadores (`stem_fly`).
+
+  - **Tejido Asintomático (`healthy`):** Muestras de control de hojas y espigas sanas.'
+condition_map:
+  aphid: Daños por pulgón (Rhopalosiphum / Schizaphis)
+  black_rust: Roya negra o del tallo (Puccinia graminis)
+  blast: Piricularia o tizón del trigo (Magnaporthe oryzae)
+  brown_rust: Roya parda o de la hoja (Puccinia triticina)
+  common_root_rot: Podredumbre común radicular (Bipolaris sorokiniana)
+  fusarium_head_blight: Fusariosis de la espiga (Fusarium graminearum)
+  healthy: Tejido vegetal sano (Control)
+  leaf_blight: Tizón foliar (Helminthosporium / Bipolaris)
+  mildew: Oídio o cenicilla del trigo (Blumeria graminis)
+  mite: Daño por ácaro de las agallas (Aceria tosichella)
+  septoria: Septoriosis de la hoja (Zymoseptoria tritici)
+  smut: Carbón suelto del trigo (Ustilago tritici)
+  stem_fly: Mosca de los tallos (Cephus cinctus / Mayetiola)
+  tan_spot: Mancha bronceada del trigo (Pyrenophora tritici-repentis)
+  yellow_rust: Roya amarilla o estriada (Puccinia striiformis)
+coarse_map:
+  fungal_disease: Infección fúngica
+  pest_damage: Daño por plagas
+  healthy: Sano
+default_primary_sources:
+- 01_Wheat_Plant_Diseases_HighRes
+

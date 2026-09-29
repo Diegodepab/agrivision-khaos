@@ -29,6 +29,7 @@ class SourceManifest(BaseModel):
     tasks: list[VisionTask] = Field(default_factory=list)
     sensor: str = "RGB"
     geography: str | None = None
+    description: str | None = None
 
 
 class QualityPolicy(BaseModel):

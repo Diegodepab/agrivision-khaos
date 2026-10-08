@@ -1,5 +1,4 @@
 # AgriVision Khaos
-==============================
 
 **AgriVision Khaos** es un nodo de curación y preprocesamiento de datos orientado al *Data-Centric AI* y al Aprendizaje Federado en el ámbito agrícola.
 
